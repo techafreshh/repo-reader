@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: voltchat-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    # No ports exposed here! The backend is completely hidden from the internet.
+    # It is only accessible to the frontend container on the internal Docker network.
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Connect to the backend through the Nginx reverse proxy using the /api route
+        - VITE_WEBHOOK_URL=/api/chat
+    container_name: voltchat-frontend
+    restart: unless-stopped
+    ports:
+      # Expose Nginx to the internet on port 80
+      - "80:80"
+    depends_on:
+      - backend

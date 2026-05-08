@@ -1,0 +1,5 @@
+services:
+  frontend:
+    build: .
+    container_name: voltchat  # <--- Remember this name!
+    restart: always

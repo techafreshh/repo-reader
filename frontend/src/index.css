@@ -1,0 +1,223 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* VoltChat Design System - Electric Dark Theme
+   All colors MUST be HSL.
+*/
+
+@layer base {
+  :root, :root.dark, :root.deep-dark {
+    --background: 0 0% 13%;
+    --foreground: 0 0% 100%;
+
+    --card: 0 0% 15%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 0 0% 15%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 0 0% 100%;
+    --primary-foreground: 0 0% 13%;
+
+    --secondary: 0 0% 20%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 0 0% 20%;
+    --muted-foreground: 0 0% 60%;
+
+    --accent: 0 0% 100%;
+    --accent-foreground: 0 0% 13%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --border: 0 0% 25%;
+    --input: 0 0% 20%;
+    --ring: 0 0% 100%;
+
+    --radius: 0.5rem;
+
+    /* VoltChat specific tokens */
+    --volt-glow: 0 0% 100%;
+    --volt-pulse: 0 0% 100%;
+    --volt-shimmer-start: 0 0% 100%;
+    --volt-shimmer-end: 0 0% 80%;
+
+    --sidebar-background: 0 0% 11%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 0 0% 13%;
+    --sidebar-accent: 0 0% 18%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 20%;
+    --sidebar-ring: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Tighter line-height for speed perception */
+  h1, h2, h3, h4, h5, h6 {
+    @apply leading-tight tracking-tight;
+  }
+
+  /* Monospace for technical elements */
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer components {
+  /* Electric glow effect */
+  .volt-glow {
+    box-shadow: 0 0 20px hsl(var(--volt-glow) / 0.3),
+                0 0 40px hsl(var(--volt-glow) / 0.1);
+  }
+
+  .volt-glow-strong {
+    box-shadow: 0 0 20px hsl(var(--volt-glow) / 0.5),
+                0 0 60px hsl(var(--volt-glow) / 0.2);
+  }
+
+  /* Pulse animation for sending state */
+  .volt-pulse {
+    animation: volt-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* Shimmer animation for receiving state */
+  .volt-shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 0%,
+      hsl(var(--volt-shimmer-start) / 0.2) 50%,
+      hsl(var(--muted)) 100%
+    );
+    background-size: 200% 100%;
+    animation: volt-shimmer 1.5s ease-in-out infinite;
+  }
+
+  /* Message enter animation */
+  .message-enter {
+    animation: message-snap-up 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Cursor blink for streaming */
+  .cursor-blink::after {
+    content: '▊';
+    animation: cursor-blink 1s step-end infinite;
+    @apply text-primary ml-0.5;
+  }
+
+  /* Focus ring for accessibility */
+  .focus-volt {
+    @apply outline-none ring-2 ring-primary/50 ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer utilities {
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    .volt-pulse,
+    .volt-shimmer,
+    .message-enter,
+    .cursor-blink::after {
+      animation: none;
+    }
+  }
+}
+
+/* Keyframes */
+@keyframes loading-dots {
+  0%, 20% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.loading-dot {
+  animation: loading-dots 1.4s infinite ease-in-out both;
+}
+
+.loading-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.loading-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes volt-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes volt-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes message-snap-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cursor-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
