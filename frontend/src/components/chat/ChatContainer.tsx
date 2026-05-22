@@ -165,7 +165,7 @@ function EmptyState({ onOpenSettings, isExternal, appName, appDescription, appLo
           <Zap className="h-8 w-8" />
         )}
       </div>
-      <h2 className="mb-2 text-xl font-semibold tracking-tight">
+      <h2 className="mb-2 text-3xl font-normal font-serif tracking-tight text-foreground">
         Welcome to {appName}
       </h2>
       <p className="mb-6 max-w-md text-sm text-muted-foreground">

@@ -1,23 +1,28 @@
 import { useState, useEffect } from 'react';
 
-type Theme = 'deep-dark';
+type Theme = 'light' | 'deep-dark';
 
 const THEME_STORAGE_KEY = 'voltchat-theme';
 
 export function useTheme() {
-  // Lock theme to deep-dark (Onyx)
-  const [theme] = useState<Theme>('deep-dark');
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    return (saved as Theme) || 'light';
+  });
 
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark', 'deep-dark');
-    root.classList.add('dark', 'deep-dark');
-    localStorage.setItem(THEME_STORAGE_KEY, 'deep-dark');
-  }, []);
+    if (theme === 'deep-dark') {
+      root.classList.add('dark', 'deep-dark');
+    } else {
+      root.classList.add('light');
+    }
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
 
   const toggleTheme = () => {
-    // No-op as we only have one theme now
-    console.log('Theme is locked to Onyx.');
+    setTheme(prev => prev === 'light' ? 'deep-dark' : 'light');
   };
 
   return { theme, toggleTheme };

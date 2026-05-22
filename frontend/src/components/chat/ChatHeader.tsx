@@ -144,6 +144,27 @@ export function ChatHeader({
             <TooltipContent side="bottom">Webhook settings</TooltipContent>
           </Tooltip>
         )}
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onToggleTheme}
+              className="h-8 w-8 text-muted-foreground hover:text-primary"
+            >
+              {theme === 'deep-dark' ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+              <span className="sr-only">Toggle theme</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {theme === 'deep-dark' ? 'Use Warm Cream Canvas' : 'Use Warm Navy Surface'}
+          </TooltipContent>
+        </Tooltip>
       </div>
     </header>
   );

@@ -1,62 +1,112 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* VoltChat Design System - Electric Dark Theme
-   All colors MUST be HSL.
+/* Claude-Inspired Warm-Canvas Design System
+   All colors are curated HSL values matching DESIGN.md
 */
 
 @layer base {
-  :root, :root.dark, :root.deep-dark {
-    --background: 0 0% 13%;
-    --foreground: 0 0% 100%;
+  /* Default: Tinted Warm Cream Canvas (Light Theme) */
+  :root, :root.light {
+    --background: 48 24% 97%; /* #faf9f5 */
+    --foreground: 60 1% 8%; /* #141413 */
 
-    --card: 0 0% 15%;
-    --card-foreground: 0 0% 100%;
+    --card: 39 23% 90%; /* #efe9de */
+    --card-foreground: 60 1% 8%;
 
-    --popover: 0 0% 15%;
-    --popover-foreground: 0 0% 100%;
+    --popover: 48 24% 97%;
+    --popover-foreground: 60 1% 8%;
 
-    --primary: 0 0% 100%;
-    --primary-foreground: 0 0% 13%;
+    --primary: 15 50% 58%; /* #cc785c Warm Coral */
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 0 0% 20%;
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 45 4% 90%; /* #efe9de matching card or slightly lighter */
+    --secondary-foreground: 60 1% 8%;
 
-    --muted: 0 0% 20%;
-    --muted-foreground: 0 0% 60%;
+    --muted: 45 4% 41%; /* #6c6a64 */
+    --muted-foreground: 45 4% 53%; /* #8e8b82 */
 
-    --accent: 0 0% 100%;
-    --accent-foreground: 0 0% 13%;
+    --accent: 15 50% 58%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 0 54% 52%; /* #c64545 */
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 71% 45%;
+    --success: 132 37% 54%; /* #5db872 */
     --success-foreground: 0 0% 100%;
 
-    --border: 0 0% 25%;
-    --input: 0 0% 20%;
-    --ring: 0 0% 100%;
+    --border: 35 22% 87%; /* #e6dfd8 Hairline */
+    --input: 48 24% 97%;
+    --ring: 15 50% 58%; /* Coral Ring */
 
     --radius: 0.5rem;
 
-    /* VoltChat specific tokens */
-    --volt-glow: 0 0% 100%;
-    --volt-pulse: 0 0% 100%;
-    --volt-shimmer-start: 0 0% 100%;
-    --volt-shimmer-end: 0 0% 80%;
+    /* Claude specific tokens */
+    --volt-glow: 15 50% 58%;
+    --volt-pulse: 15 50% 58%;
+    --volt-shimmer-start: 15 50% 58%;
+    --volt-shimmer-end: 45 4% 90%;
 
-    --sidebar-background: 0 0% 11%;
-    --sidebar-foreground: 0 0% 100%;
-    --sidebar-primary: 0 0% 100%;
-    --sidebar-primary-foreground: 0 0% 13%;
-    --sidebar-accent: 0 0% 18%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 0 0% 20%;
-    --sidebar-ring: 0 0% 100%;
+    --sidebar-background: 45 4% 92%;
+    --sidebar-foreground: 60 1% 8%;
+    --sidebar-primary: 15 50% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 39 23% 88%;
+    --sidebar-accent-foreground: 60 1% 8%;
+    --sidebar-border: 35 22% 85%;
+    --sidebar-ring: 15 50% 58%;
+  }
+
+  /* Warm Navy Surface (Dark Theme) */
+  :root.dark, :root.deep-dark {
+    --background: 40 9% 8%; /* #181715 */
+    --foreground: 38 24% 97%; /* #faf9f5 */
+
+    --card: 30 7% 13%; /* #252320 Surface dark elevated */
+    --card-foreground: 38 24% 97%;
+
+    --popover: 30 7% 11%; /* #1f1e1b */
+    --popover-foreground: 38 24% 97%;
+
+    --primary: 15 50% 58%; /* Warm Coral */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 30 7% 13%;
+    --secondary-foreground: 38 24% 97%;
+
+    --muted: 40 5% 61%; /* #a09d96 */
+    --muted-foreground: 40 5% 45%;
+
+    --accent: 15 50% 58%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 54% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 132 37% 54%;
+    --success-foreground: 0 0% 100%;
+
+    --border: 30 7% 11%; /* #1f1e1b */
+    --input: 30 7% 13%;
+    --ring: 15 50% 58%;
+
+    /* Claude specific tokens */
+    --volt-glow: 15 50% 58%;
+    --volt-pulse: 15 50% 58%;
+    --volt-shimmer-start: 15 50% 58%;
+    --volt-shimmer-end: 30 7% 13%;
+
+    --sidebar-background: 40 9% 7%;
+    --sidebar-foreground: 38 24% 97%;
+    --sidebar-primary: 15 50% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 30 7% 11%;
+    --sidebar-accent-foreground: 38 24% 97%;
+    --sidebar-border: 30 7% 9%;
+    --sidebar-ring: 15 50% 58%;
   }
 }
 
@@ -220,4 +270,12 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Typography prose overrides to match the design system */
+.prose h1, .prose h2, .prose h3, .prose h4 {
+  font-family: 'Cormorant Garamond', Garamond, 'Times New Roman', serif !important;
+  font-weight: 500 !important;
+  letter-spacing: -0.02em !important;
+  color: hsl(var(--foreground)) !important;
 }

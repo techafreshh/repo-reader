@@ -229,8 +229,8 @@ export function ChatInput({
               size="icon"
               className={cn(
                 'h-8 w-8 shrink-0 rounded-full transition-all duration-150',
-                'bg-white text-black hover:bg-white/90',
-                'disabled:bg-white/20 disabled:text-white/40 disabled:cursor-not-allowed'
+                'bg-primary text-primary-foreground hover:bg-[#a9583e]',
+                'disabled:bg-primary/20 disabled:text-primary-foreground/40 disabled:cursor-not-allowed'
               )}
             >
               <ArrowUp className="h-5 w-5 stroke-[3]" />

@@ -15,6 +15,7 @@ export default {
     extend: {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+        serif: ['Cormorant Garamond', 'Garamond', 'Times New Roman', 'serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       colors: {
