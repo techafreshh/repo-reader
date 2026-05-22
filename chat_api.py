@@ -50,6 +50,25 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # In a production app, use a database and persistent storage (like Redis)
 sessions: Dict[str, Dict] = {}
 
+def get_friendly_name(target: str) -> str:
+    """Get a user-friendly name from the repository target URL or path."""
+    if target.startswith(("http://", "https://", "git@", "github.com")):
+        # Extract repo name from URL
+        parts = target.rstrip("/").split("/")
+        if parts:
+            name = parts[-1]
+            if name.endswith(".git"):
+                name = name[:-4]
+            return name
+    else:
+        # Extract folder name
+        try:
+            return Path(target).name or target
+        except Exception:
+            return target
+    return target
+
+
 # --- Schemas ---
 
 class InitializeRequest(BaseModel):
@@ -124,9 +143,10 @@ async def initialize_repo(request_body: Optional[InitializeRequest] = None, repo
     
     try:
         root = _initialize_session_logic(target, session_id)
+        friendly_name = get_friendly_name(target)
         return InitializeResponse(
             session_id=session_id,
-            message=f"Repository initialized at {root}"
+            message=f"Repository '{friendly_name}' initialized successfully."
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -154,8 +174,9 @@ async def chat_with_repo(
         if is_url or is_path:
             try:
                 root = _initialize_session_logic(msg, sid)
+                friendly_name = get_friendly_name(msg)
                 return ChatResponse(
-                    response=f"✅ Repository initialized from: **{msg}**\n\nI've analyzed the codebase at `{root}`. What would you like to know about it?"
+                    response=f"✅ Repository initialized from: **{msg}**\n\nI've analyzed the codebase **{friendly_name}**. What would you like to know about it?"
                 )
             except Exception as e:
                 return ChatResponse(
@@ -214,7 +235,8 @@ async def chat_with_repo_stream(
             if is_url or is_path:
                 try:
                     root = _initialize_session_logic(msg, sid)
-                    yield f"✅ Repository initialized from: **{msg}**\n\nI've analyzed the codebase at `{root}`. What would you like to know about it?"
+                    friendly_name = get_friendly_name(msg)
+                    yield f"✅ Repository initialized from: **{msg}**\n\nI've analyzed the codebase **{friendly_name}**. What would you like to know about it?"
                 except Exception as e:
                     yield f"❌ Failed to initialize repository: {str(e)}\n\nPlease ensure the URL or path is correct."
             else:
