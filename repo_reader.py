@@ -1,5 +1,6 @@
 import os
 import re
+import ast
 from pathlib import Path
 from typing import List, Optional, Any
 import subprocess
@@ -72,6 +73,8 @@ agent = Agent(
         "Your goal is to help users understand a codebase by exploring files, "
         "searching for symbols, and tracing logic. "
         "Always start by listing files if you're unsure of the project structure. "
+        "For Python files (.py), prefer using the analyze_python_ast tool first to get a "
+        "token-efficient overview of classes, functions, and docstrings before reading the full file. "
         "When explaining code, be precise and mention 'what' it does and 'why' it's designed that way."
     )
 )
@@ -203,6 +206,100 @@ def find_references(ctx: RunContext[RepoConfig], symbol_name: str) -> str:
     ctx.deps.tool_events.append(f"🔗 Finding references to `{symbol_name}`...")
     pattern = rf"(?:\W|^){re.escape(symbol_name)}(?:\W|$)"
     return search_code(ctx, pattern)
+
+@agent.tool
+def analyze_python_ast(ctx: RunContext[RepoConfig], filepath: str) -> str:
+    """Parse a Python file using AST to extract classes, functions, decorators, and docstrings.
+    This is much more token-efficient than reading the full file and should be preferred
+    for getting an overview of Python files."""
+    console.print(f"[bold yellow]Tool Called: analyze_python_ast({filepath})...[/bold yellow]")
+    ctx.deps.tool_events.append(f"🧬 AST analysis of `{filepath}`...")
+    path = ctx.deps.root_path / filepath
+    if not path.exists():
+        return f"Error: File '{filepath}' not found."
+    if not filepath.endswith('.py'):
+        return f"Error: '{filepath}' is not a Python file. This tool only works with .py files."
+
+    try:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=filepath)
+    except SyntaxError as e:
+        return f"Error: Could not parse '{filepath}': {e}"
+    except Exception as e:
+        return f"Error reading '{filepath}': {e}"
+
+    lines = []
+    module_doc = ast.get_docstring(tree)
+    if module_doc:
+        lines.append(f'Module docstring: "{module_doc[:200]}"')
+    lines.append("")
+
+    # Extract imports summary
+    imports = []
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            for alias in node.names:
+                imports.append(f"{module}.{alias.name}")
+    if imports:
+        lines.append(f"Imports ({len(imports)}): {', '.join(imports[:20])}")
+        if len(imports) > 20:
+            lines.append(f"  ... and {len(imports) - 20} more imports")
+        lines.append("")
+
+    # Extract top-level classes and functions
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.ClassDef):
+            decorators = [f"@{ast.dump(d) if not hasattr(d, 'id') else d.id}" for d in node.decorator_list]
+            dec_str = " ".join(decorators) + " " if decorators else ""
+            bases = [ast.unparse(b) for b in node.bases] if node.bases else []
+            base_str = f"({', '.join(bases)})" if bases else ""
+            lines.append(f"{dec_str}class {node.name}{base_str}:  [line {node.lineno}]")
+            doc = ast.get_docstring(node)
+            if doc:
+                lines.append(f'    """{doc[:150]}"""')
+            # Extract methods within the class
+            for item in node.body:
+                if isinstance(item, ast.FunctionDef) or isinstance(item, ast.AsyncFunctionDef):
+                    args = []
+                    for arg in item.args.args:
+                        annotation = f": {ast.unparse(arg.annotation)}" if arg.annotation else ""
+                        args.append(f"{arg.arg}{annotation}")
+                    ret = f" -> {ast.unparse(item.returns)}" if item.returns else ""
+                    prefix = "async def" if isinstance(item, ast.AsyncFunctionDef) else "def"
+                    lines.append(f"    {prefix} {item.name}({', '.join(args)}){ret}  [line {item.lineno}]")
+                    method_doc = ast.get_docstring(item)
+                    if method_doc:
+                        lines.append(f'        """{method_doc[:100]}"""')
+            lines.append("")
+
+        elif isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+            decorators = []
+            for d in node.decorator_list:
+                try:
+                    decorators.append(f"@{ast.unparse(d)}")
+                except Exception:
+                    decorators.append("@<decorator>")
+            dec_str = " ".join(decorators) + " " if decorators else ""
+            args = []
+            for arg in node.args.args:
+                annotation = f": {ast.unparse(arg.annotation)}" if arg.annotation else ""
+                args.append(f"{arg.arg}{annotation}")
+            ret = f" -> {ast.unparse(node.returns)}" if node.returns else ""
+            prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
+            lines.append(f"{dec_str}{prefix} {node.name}({', '.join(args)}){ret}  [line {node.lineno}]")
+            doc = ast.get_docstring(node)
+            if doc:
+                lines.append(f'    """{doc[:150]}"""')
+            lines.append("")
+
+    if len(lines) <= 2:
+        return f"No classes or functions found in '{filepath}'."
+
+    return f"--- AST Analysis: {filepath} ---\n" + "\n".join(lines)
 
 # --- CLI Implementation ---
 
