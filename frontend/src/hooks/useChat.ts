@@ -408,6 +408,7 @@ export function useChat() {
       appName: ENV_APP_NAME,
       appDescription: ENV_APP_DESCRIPTION,
       appLogoUrl: ENV_APP_LOGO_URL,
+      sessionId,
     };
   }
 function getDemoResponse(input: string): string {

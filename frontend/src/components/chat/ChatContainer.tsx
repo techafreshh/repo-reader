@@ -27,6 +27,7 @@ export function ChatContainer() {
     appName,
     appDescription,
     appLogoUrl,
+    sessionId,
   } = useChat();
   const { theme, toggleTheme } = useTheme();
 
@@ -59,7 +60,12 @@ export function ChatContainer() {
             isSidebarOpen ? 'w-72' : 'w-0 p-0'
           )}
         >
-          <Sidebar onNewChat={clearMessages} webhookConfig={webhookConfig} />
+          <Sidebar
+            onNewChat={clearMessages}
+            webhookConfig={webhookConfig}
+            sessionId={sessionId}
+            onFileClick={(path) => sendMessage(`Explain the file: ${path}`)}
+          />
         </div>
         <div className="flex flex-1 flex-col">
           <ChatHeader

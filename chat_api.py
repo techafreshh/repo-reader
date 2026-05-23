@@ -275,6 +275,49 @@ async def chat_with_repo_stream(
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
+@app.get("/tree/{session_id}")
+async def get_file_tree(session_id: str):
+    """Return a nested JSON file tree for the loaded repository."""
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    config = session["config"]
+    root = config.root_path
+    spec = config.gitignore_spec
+
+    from repo_reader import is_ignored
+
+    def build_tree(directory: Path) -> list:
+        entries = []
+        try:
+            children = sorted(directory.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+        except PermissionError:
+            return entries
+
+        for child in children:
+            if is_ignored(child, root, spec):
+                continue
+            rel_path = str(child.relative_to(root)).replace("\\", "/")
+            if child.is_dir():
+                subtree = build_tree(child)
+                entries.append({
+                    "name": child.name,
+                    "type": "directory",
+                    "path": rel_path,
+                    "children": subtree,
+                })
+            else:
+                entries.append({
+                    "name": child.name,
+                    "type": "file",
+                    "path": rel_path,
+                })
+        return entries
+
+    tree = build_tree(root)
+    return {"tree": tree}
+
 @app.delete("/session/{session_id}")
 async def close_session(session_id: str):
     session = sessions.pop(session_id, None)
