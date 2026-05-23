@@ -52,7 +52,7 @@ export function ChatContainer() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex h-screen bg-background">
+      <div className="flex h-screen bg-background" style={theme === 'deep-dark' ? { '--background': '60 2% 12%' } as React.CSSProperties : undefined}>
         <div
           className={cn(
             'border-r border-border transition-all duration-300 ease-in-out',

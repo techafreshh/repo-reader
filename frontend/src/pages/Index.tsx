@@ -11,13 +11,17 @@ import {
   Layers, 
   Terminal as TerminalIcon, 
   Menu,
-  X
+  X,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useTheme } from '@/hooks/useTheme';
 
 export default function Index() {
   const [terminalText, setTerminalText] = useState<string[]>([]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
   // High-end terminal typing animation
   useEffect(() => {
@@ -108,6 +112,13 @@ export default function Index() {
 
           {/* Action Buttons */}
           <div className="hidden md:flex items-center gap-4">
+            <button
+              onClick={toggleTheme}
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-muted hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-neutral-800/50 transition-all"
+              aria-label="Toggle theme"
+            >
+              {theme === 'deep-dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
             <a 
               href="https://github.com/techafreshh/repo-reader" 
               target="_blank" 
@@ -162,6 +173,16 @@ export default function Index() {
             </a>
             <hr className="border-border/60" />
             <div className="flex flex-col gap-2">
+              <button
+                onClick={toggleTheme}
+                className="flex h-10 items-center justify-center rounded-md border border-border bg-transparent text-sm font-semibold text-muted hover:text-foreground transition-all gap-2"
+              >
+                {theme === 'deep-dark' ? (
+                  <><Sun className="h-4 w-4" /> Light Mode</>
+                ) : (
+                  <><Moon className="h-4 w-4" /> Dark Mode</>
+                )}
+              </button>
               <a 
                 href="https://github.com/techafreshh/repo-reader" 
                 target="_blank" 
