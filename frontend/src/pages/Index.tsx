@@ -109,7 +109,7 @@ export default function Index() {
           {/* Action Buttons */}
           <div className="hidden md:flex items-center gap-4">
             <a 
-              href="https://github.com/h/repo-reader" 
+              href="https://github.com/techafreshh/repo-reader" 
               target="_blank" 
               rel="noreferrer" 
               className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-4 text-xs font-medium text-muted hover:text-foreground hover:bg-neutral-100/50 transition-all gap-2"
@@ -163,7 +163,7 @@ export default function Index() {
             <hr className="border-border/60" />
             <div className="flex flex-col gap-2">
               <a 
-                href="https://github.com/h/repo-reader" 
+                href="https://github.com/techafreshh/repo-reader" 
                 target="_blank" 
                 rel="noreferrer" 
                 className="flex h-10 items-center justify-center rounded-md border border-border bg-transparent text-sm font-semibold text-muted hover:text-foreground transition-all gap-2"
@@ -209,11 +209,17 @@ export default function Index() {
                   <ArrowRight className="h-4 w-4 stroke-[2.5]" />
                 </Button>
               </RouterLink>
-              <RouterLink to="/chat">
-                <Button size="lg" variant="outline" className="w-full sm:w-auto border-border hover:bg-neutral-100 text-muted hover:text-foreground px-8 py-6 rounded-md text-sm font-semibold">
-                  Launch Demo Mode
-                </Button>
-              </RouterLink>
+              <a 
+                href="https://github.com/techafreshh/repo-reader"
+                target="_blank"
+                rel="noreferrer"
+                className="w-full sm:w-auto inline-flex h-[52px] items-center justify-center rounded-md border border-border bg-background px-8 text-sm font-semibold text-muted hover:text-foreground hover:bg-neutral-100 transition-all gap-2"
+              >
+                <svg className="h-4 w-4 fill-current" viewBox="0 0 16 16">
+                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                </svg>
+                Star on GitHub
+              </a>
             </div>
             
             <div className="pt-4 flex flex-wrap items-center gap-x-8 gap-y-3 text-xs text-muted font-mono">
@@ -425,7 +431,7 @@ export default function Index() {
                   <div className="space-y-3 text-[#faf9f5]/90">
                     <div>
                       <span className="text-[#a09d96]"># Clone project and configure variables</span>
-                      <div className="text-[#faf9f5] mt-1">git clone https://github.com/h/repo-reader && cd repo-reader</div>
+                      <div className="text-[#faf9f5] mt-1">git clone https://github.com/techafreshh/repo-reader && cd repo-reader</div>
                     </div>
                     
                     <div>
@@ -499,7 +505,7 @@ export default function Index() {
           </div>
           
           <div className="flex gap-4">
-            <a href="https://github.com/h/repo-reader" target="_blank" rel="noreferrer" className="text-[#a09d96] hover:text-[#faf9f5] transition-colors">
+            <a href="https://github.com/techafreshh/repo-reader" target="_blank" rel="noreferrer" className="text-[#a09d96] hover:text-[#faf9f5] transition-colors">
               <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24">
                 <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.577.688.479C19.138 20.164 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
               </svg>
