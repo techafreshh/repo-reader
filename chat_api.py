@@ -246,6 +246,8 @@ async def chat_with_repo_stream(
 
     config = session["config"]
     hist = history if history is not None else session["history"]
+    # Reset tool events for this request
+    config.tool_events = []
 
     async def event_generator():
         try:
@@ -255,11 +257,14 @@ async def chat_with_repo_stream(
                 deps=config,
                 message_history=hist
             ) as result:
+                # Yield any tool events that accumulated during tool execution
+                for event in config.tool_events:
+                    yield f"__THOUGHT__:{event}\n"
+
                 async for message in result.stream_text():
                     yield message
                 
                 # After stream finishes, update the session history
-                # We need to get the final result messages
                 session["history"] = result.new_messages()
                 
         except Exception as e:

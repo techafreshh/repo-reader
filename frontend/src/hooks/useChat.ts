@@ -171,6 +171,7 @@ export function useChat() {
           content: '',
           timestamp: new Date(),
           status: isStreamingEnabled ? 'streaming' : 'complete',
+          toolTraces: [],
         };
   
         setMessages((prev) => [...prev, placeholderMessage]);
@@ -196,13 +197,19 @@ export function useChat() {
             return;
           }
   
-          console.log(`[useChat] Sending message to: ${webhookConfig.url}`, {
+          // Determine the correct URL for streaming vs non-streaming
+          const baseUrl = webhookConfig.url;
+          const streamUrl = isStreamingEnabled
+            ? baseUrl.replace(/\/chat\/?$/, '/chat/stream')
+            : baseUrl;
+
+          console.log(`[useChat] Sending message to: ${streamUrl}`, {
             message: content.trim(),
             sessionId,
-            timestamp: new Date().toISOString()
+            streaming: isStreamingEnabled,
           });
 
-          const response = await fetch(webhookConfig.url, {
+          const response = await fetch(streamUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -220,19 +227,73 @@ export function useChat() {
           if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
           }
-  
-          const data = await response.json();
-          console.log('[useChat] Received data:', data);
-          const responseContent =
-            (typeof data.output === 'object' ? data.output?.response : data.output) ||
-            data.response ||
-            data.message ||
-            data.content ||
-            JSON.stringify(data);
-  
-          if (isStreamingEnabled) {
-            simulateStreaming(assistantMessageId, responseContent);
+
+          if (isStreamingEnabled && response.body) {
+            // --- Real streaming via ReadableStream ---
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let accumulatedContent = '';
+            const traces: string[] = [];
+            let cancelled = false;
+
+            streamCleanupRef.current = () => {
+              cancelled = true;
+              reader.cancel();
+            };
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done || cancelled) break;
+
+              const chunk = decoder.decode(value, { stream: true });
+              // Split by lines to find __THOUGHT__ markers
+              const lines = chunk.split('\n');
+              
+              for (const line of lines) {
+                if (line.startsWith('__THOUGHT__:')) {
+                  const thought = line.slice('__THOUGHT__:'.length);
+                  traces.push(thought);
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMessageId
+                        ? { ...m, toolTraces: [...traces] }
+                        : m
+                    )
+                  );
+                } else if (line.length > 0) {
+                  accumulatedContent += line;
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMessageId
+                        ? { ...m, content: accumulatedContent }
+                        : m
+                    )
+                  );
+                }
+              }
+            }
+
+            // Finalize the message
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMessageId
+                  ? { ...m, content: accumulatedContent, status: 'complete', toolTraces: traces.length > 0 ? traces : undefined }
+                  : m
+              )
+            );
+            setIsLoading(false);
+            streamCleanupRef.current = null;
           } else {
+            // --- Non-streaming: regular JSON response ---
+            const data = await response.json();
+            console.log('[useChat] Received data:', data);
+            const responseContent =
+              (typeof data.output === 'object' ? data.output?.response : data.output) ||
+              data.response ||
+              data.message ||
+              data.content ||
+              JSON.stringify(data);
+  
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantMessageId

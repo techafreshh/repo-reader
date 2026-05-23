@@ -26,6 +26,7 @@ class RepoConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     root_path: Path
     gitignore_spec: Optional[pathspec.PathSpec] = None
+    tool_events: List[str] = Field(default_factory=list)
 
 # --- Utilities ---
 
@@ -63,7 +64,7 @@ def clone_repo(url: str) -> Path:
 # --- Agent Definition ---
 
 agent = Agent(
-    'openrouter:mistralai/mistral-nemo',
+    'openrouter:inclusionai/ling-2.6-flash',
     deps_type=RepoConfig,
     description="An AI agent that explores and explains code repositories.",
     system_prompt=(
@@ -81,6 +82,7 @@ agent = Agent(
 def list_files(ctx: RunContext[RepoConfig], subdir: str = ".") -> str:
     """Recursively list files in a subdirectory, respecting .gitignore."""
     console.print(f"[bold yellow]Tool Called: list_files({subdir})...[/bold yellow]")
+    ctx.deps.tool_events.append(f"📂 Listing files in `{subdir}`...")
     target_dir = ctx.deps.root_path / subdir
     if not target_dir.exists() or not target_dir.is_dir():
         return f"Error: Directory '{subdir}' not found."
@@ -123,6 +125,7 @@ def is_binary(path: Path) -> bool:
 def read_file(ctx: RunContext[RepoConfig], filepath: str) -> str:
     """Read the full content of a file."""
     console.print(f"[bold yellow]Tool Called: read_file({filepath})...[/bold yellow]")
+    ctx.deps.tool_events.append(f"📖 Reading `{filepath}`...")
     path = ctx.deps.root_path / filepath
     if not path.exists():
         return f"Error: File '{filepath}' not found."
@@ -142,6 +145,7 @@ def read_file(ctx: RunContext[RepoConfig], filepath: str) -> str:
 def search_code(ctx: RunContext[RepoConfig], pattern: str) -> str:
     """Search for a regex pattern or string across all non-ignored files."""
     console.print(f"[bold yellow]Tool Called: search_code({pattern})...[/bold yellow]")
+    ctx.deps.tool_events.append(f"🔍 Searching for `{pattern}`...")
     results = []
     regex = re.compile(pattern, re.IGNORECASE)
     
@@ -174,6 +178,7 @@ def search_code(ctx: RunContext[RepoConfig], pattern: str) -> str:
 def get_file_structure(ctx: RunContext[RepoConfig], filepath: str) -> str:
     """Provide a high-level summary of a file (classes and functions) without the full body."""
     console.print(f"[bold yellow]Tool Called: get_file_structure({filepath})...[/bold yellow]")
+    ctx.deps.tool_events.append(f"⚡ Analyzing structure of `{filepath}`...")
     path = ctx.deps.root_path / filepath
     if not path.exists():
         return f"Error: File '{filepath}' not found."
@@ -195,6 +200,7 @@ def get_file_structure(ctx: RunContext[RepoConfig], filepath: str) -> str:
 def find_references(ctx: RunContext[RepoConfig], symbol_name: str) -> str:
     """Find all places where a specific function, class, or variable is used."""
     console.print(f"[bold yellow]Tool Called: find_references({symbol_name})...[/bold yellow]")
+    ctx.deps.tool_events.append(f"🔗 Finding references to `{symbol_name}`...")
     pattern = rf"(?:\W|^){re.escape(symbol_name)}(?:\W|$)"
     return search_code(ctx, pattern)
 

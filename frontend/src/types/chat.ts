@@ -8,6 +8,7 @@ export interface Message {
   content: string;
   timestamp: Date;
   status: MessageStatus;
+  toolTraces?: string[];
 }
 
 export interface WebhookConfig {

@@ -63,6 +63,22 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
           isError && 'border-destructive/50 bg-destructive/10'
         )}
       >
+        {/* Tool traces (Agent Thoughts) */}
+        {!isUser && message.toolTraces && message.toolTraces.length > 0 && (
+          <div className="mb-3 rounded-lg border border-border/50 bg-[#181715] dark:bg-[#141413] overflow-hidden">
+            <div className="px-3 py-1.5 text-[10px] font-mono font-semibold text-[#a09d96] border-b border-[#1f1e1b] flex items-center gap-1.5">
+              <span className="text-primary">✦</span> Agent Trace
+            </div>
+            <div className="px-3 py-2 space-y-1">
+              {message.toolTraces.map((trace, i) => (
+                <div key={i} className="text-[11px] font-mono text-[#e8a55a] leading-relaxed">
+                  {trace}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Message content */}
         {isUser ? (
           <div
