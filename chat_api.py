@@ -91,6 +91,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+    tool_events: Optional[List[str]] = None
     # we return history in a format that can be sent back
     # history: List[dict] 
 
@@ -188,6 +189,7 @@ async def chat_with_repo(
             )
 
     config = session["config"]
+    config.tool_events = []
     # If no history provided in request, use the one in session
     hist = history if history is not None else session["history"]
 
@@ -203,7 +205,8 @@ async def chat_with_repo(
         session["history"] = result.new_messages()
 
         return ChatResponse(
-            response=result.output
+            response=result.output,
+            tool_events=config.tool_events
         )
 
     except Exception as e:

@@ -241,35 +241,86 @@ export function useChat() {
               reader.cancel();
             };
 
+            let buffer = '';
+            let isReadingThoughts = true;
+
             while (true) {
               const { done, value } = await reader.read();
               if (done || cancelled) break;
 
-              const chunk = decoder.decode(value, { stream: true });
-              // Split by lines to find __THOUGHT__ markers
-              const lines = chunk.split('\n');
+              const chunk = decoder.decode(value, { stream: !done });
               
-              for (const line of lines) {
-                if (line.startsWith('__THOUGHT__:')) {
-                  const thought = line.slice('__THOUGHT__:'.length);
-                  traces.push(thought);
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMessageId
-                        ? { ...m, toolTraces: [...traces] }
-                        : m
-                    )
-                  );
-                } else if (line.length > 0) {
-                  accumulatedContent += line;
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMessageId
-                        ? { ...m, content: accumulatedContent }
-                        : m
-                    )
-                  );
+              if (isReadingThoughts) {
+                buffer += chunk;
+                
+                // Process complete lines from the buffer
+                let newlineIndex;
+                while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+                  const line = buffer.slice(0, newlineIndex);
+                  buffer = buffer.slice(newlineIndex + 1);
+                  
+                  if (line.startsWith('__THOUGHT__:')) {
+                    const thought = line.slice('__THOUGHT__:'.length);
+                    traces.push(thought);
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === assistantMessageId
+                          ? { ...m, toolTraces: [...traces] }
+                          : m
+                      )
+                    );
+                  } else {
+                    // We found a complete line that is NOT a thought!
+                    // This means thoughts are finished.
+                    isReadingThoughts = false;
+                    // Append this line and the newline back, plus whatever is left in the buffer
+                    accumulatedContent += line + '\n' + buffer;
+                    buffer = ''; // Clear buffer since we moved it
+                    
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === assistantMessageId
+                          ? { ...m, content: accumulatedContent }
+                          : m
+                      )
+                    );
+                    break;
+                  }
                 }
+              } else {
+                // Thoughts are finished, stream the remaining text directly
+                accumulatedContent += chunk;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessageId
+                      ? { ...m, content: accumulatedContent }
+                      : m
+                  )
+                );
+              }
+            }
+
+            // Handle any residual buffer if the stream finishes without newline
+            if (isReadingThoughts && buffer.length > 0) {
+              if (buffer.startsWith('__THOUGHT__:')) {
+                const thought = buffer.slice('__THOUGHT__:'.length);
+                traces.push(thought);
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessageId
+                      ? { ...m, toolTraces: [...traces] }
+                      : m
+                  )
+                );
+              } else {
+                accumulatedContent += buffer;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessageId
+                      ? { ...m, content: accumulatedContent }
+                      : m
+                  )
+                );
               }
             }
 
@@ -277,7 +328,12 @@ export function useChat() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantMessageId
-                  ? { ...m, content: accumulatedContent, status: 'complete', toolTraces: traces.length > 0 ? traces : undefined }
+                  ? { 
+                      ...m, 
+                      content: accumulatedContent, 
+                      status: 'complete', 
+                      toolTraces: traces.length > 0 ? traces : undefined 
+                    }
                   : m
               )
             );
@@ -297,7 +353,12 @@ export function useChat() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantMessageId
-                  ? { ...m, content: responseContent, status: 'complete' }
+                  ? { 
+                      ...m, 
+                      content: responseContent, 
+                      status: 'complete',
+                      toolTraces: data.tool_events && data.tool_events.length > 0 ? data.tool_events : undefined
+                    }
                   : m
               )
             );
