@@ -8,10 +8,11 @@ interface SidebarProps {
   onNewChat: () => void;
   webhookConfig: WebhookConfig;
   sessionId: string;
+  treeVersion?: number;
   onFileClick?: (path: string) => void;
 }
 
-export function Sidebar({ onNewChat, webhookConfig, sessionId, onFileClick }: SidebarProps) {
+export function Sidebar({ onNewChat, webhookConfig, sessionId, treeVersion, onFileClick }: SidebarProps) {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [isLoadingTree, setIsLoadingTree] = useState(false);
   const [treeError, setTreeError] = useState<string | null>(null);
@@ -50,7 +51,7 @@ export function Sidebar({ onNewChat, webhookConfig, sessionId, onFileClick }: Si
     };
 
     fetchTree();
-  }, [webhookConfig.url, sessionId]);
+  }, [webhookConfig.url, sessionId, treeVersion]);
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground p-3">

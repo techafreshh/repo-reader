@@ -35,6 +35,7 @@ export function useChat() {
     return savedSessionId;
   });
   const streamCleanupRef = useRef<(() => void) | null>(null);
+  const [treeVersion, setTreeVersion] = useState(0);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -170,7 +171,7 @@ export function useChat() {
           role: 'assistant',
           content: '',
           timestamp: new Date(),
-          status: isStreamingEnabled ? 'streaming' : 'complete',
+          status: 'streaming',
           toolTraces: [],
         };
   
@@ -339,6 +340,10 @@ export function useChat() {
             );
             setIsLoading(false);
             streamCleanupRef.current = null;
+            // Trigger a tree refresh if the response looks like a repo init
+            if (accumulatedContent.includes('Repository initialized') || accumulatedContent.includes('analyzed the codebase')) {
+              setTreeVersion((v) => v + 1);
+            }
           } else {
             // --- Non-streaming: regular JSON response ---
             const data = await response.json();
@@ -363,6 +368,10 @@ export function useChat() {
               )
             );
             setIsLoading(false);
+            // Trigger a tree refresh if the response looks like a repo init
+            if (responseContent.includes('Repository initialized') || responseContent.includes('analyzed the codebase')) {
+              setTreeVersion((v) => v + 1);
+            }
           }
         } catch (error) {
           console.error('[useChat] Send message error:', error);
@@ -470,6 +479,7 @@ export function useChat() {
       appDescription: ENV_APP_DESCRIPTION,
       appLogoUrl: ENV_APP_LOGO_URL,
       sessionId,
+      treeVersion,
     };
   }
 function getDemoResponse(input: string): string {

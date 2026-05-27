@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, AliasGenerator
 from pydantic.alias_generators import to_camel
 from typing import List, Dict, Optional, Annotated, Any
+import asyncio
 import uuid
 import shutil
 from pathlib import Path
@@ -249,32 +250,80 @@ async def chat_with_repo_stream(
 
     config = session["config"]
     hist = history if history is not None else session["history"]
-    # Reset tool events for this request
-    config.tool_events = []
+
+    # Use an asyncio.Queue so tool events stream to the client in real-time.
+    # Tools are sync (run in a thread-pool), so we use call_soon_threadsafe.
+    event_queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    class _LiveEventList(list):
+        """A list subclass that also pushes items onto an asyncio.Queue.
+        Called from sync tools running in a thread-pool executor,
+        so we must use call_soon_threadsafe."""
+        def append(self, item):
+            super().append(item)
+            loop.call_soon_threadsafe(event_queue.put_nowait, item)
+
+    config.tool_events = _LiveEventList()
+    stream_done = asyncio.Event()
 
     async def event_generator():
-        try:
-            # Use run_stream for real-time word generation
-            async with agent.run_stream(
-                msg,
-                deps=config,
-                message_history=hist
-            ) as result:
-                # Yield any tool events that accumulated during tool execution
-                for event in config.tool_events:
-                    yield f"__THOUGHT__:{event}\n"
+        stream_result_holder: list = []
 
-                async for message in result.stream_text():
-                    yield message
-                
-                # After stream finishes, update the session history
-                session["history"] = result.new_messages()
-                
+        async def run_agent():
+            """Background task: enters the agent context manager (runs all tool
+            calls), then signals the generator with the stream result."""
+            try:
+                async with agent.run_stream(
+                    msg,
+                    deps=config,
+                    message_history=hist
+                ) as result:
+                    # Tools are done — hand the stream result to the generator.
+                    # We are on the event loop here, so put_nowait is safe.
+                    event_queue.put_nowait(("__STREAM_START__", result))
+                    # Keep the context manager alive while the generator
+                    # consumes the text stream
+                    await stream_done.wait()
+                    # Update history after streaming is fully consumed
+                    session["history"] = result.new_messages()
+            except Exception as e:
+                event_queue.put_nowait(("__ERROR__", e))
+
+        task = asyncio.create_task(run_agent())
+
+        try:
+            # Phase 1: yield tool events in real-time as they arrive
+            while True:
+                item = await event_queue.get()
+                if isinstance(item, tuple):
+                    tag = item[0]
+                    if tag == "__STREAM_START__":
+                        stream_result_holder.append(item[1])
+                        break
+                    elif tag == "__ERROR__":
+                        import traceback
+                        print(f"Error in chat_with_repo_stream: {item[1]}")
+                        traceback.print_exc()
+                        yield f"\n\n[Error]: {str(item[1])}"
+                        return
+                else:
+                    # item is a tool-event string
+                    yield f"__THOUGHT__:{item}\n"
+
+            # Phase 2: stream the model's text response
+            result = stream_result_holder[0]
+            async for message in result.stream_text():
+                yield message
+
         except Exception as e:
             import traceback
             print(f"Error in chat_with_repo_stream: {e}")
             traceback.print_exc()
             yield f"\n\n[Error]: {str(e)}"
+        finally:
+            stream_done.set()
+            await task
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

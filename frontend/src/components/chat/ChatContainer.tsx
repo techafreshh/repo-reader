@@ -28,6 +28,7 @@ export function ChatContainer() {
     appDescription,
     appLogoUrl,
     sessionId,
+    treeVersion,
   } = useChat();
   const { theme, toggleTheme } = useTheme();
 
@@ -64,6 +65,7 @@ export function ChatContainer() {
             onNewChat={clearMessages}
             webhookConfig={webhookConfig}
             sessionId={sessionId}
+            treeVersion={treeVersion}
             onFileClick={(path) => sendMessage(`Explain the file: ${path}`)}
           />
         </div>
