@@ -268,6 +268,10 @@ async def chat_with_repo_stream(
     stream_done = asyncio.Event()
 
     async def event_generator():
+        # Yield an immediate initialization trace at second 0 to flush connections
+        # and give visual feedback to the user while LLM starts thinking.
+        yield "__THOUGHT__:🚀 Initializing agent run...\n"
+
         stream_result_holder: list = []
 
         async def run_agent():
@@ -325,7 +329,15 @@ async def chat_with_repo_stream(
             stream_done.set()
             await task
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 @app.get("/tree/{session_id}")
 async def get_file_tree(session_id: str):
