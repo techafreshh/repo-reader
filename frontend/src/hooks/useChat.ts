@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { HttpAgent, EventType } from '@ag-ui/client';
 import type { BaseEvent } from '@ag-ui/core';
-import type { Message, WebhookConfig } from '@/types/chat';
+import type { Message, ToolCall, WebhookConfig } from '@/types/chat';
 
 const WEBHOOK_STORAGE_KEY = 'voltchat-api-url';
 const MESSAGES_STORAGE_KEY = 'voltchat-messages';
@@ -133,7 +133,7 @@ export function useChat() {
         content: '',
         timestamp: new Date(),
         status: 'streaming',
-        toolTraces: [],
+        toolCalls: [],
       };
 
       setMessages((prev) => [...prev, placeholderMessage]);
@@ -187,8 +187,7 @@ export function useChat() {
         });
 
         let accumulatedContent = '';
-        const traces: string[] = [];
-        const toolNames: Record<string, string> = {};
+        const toolCalls: ToolCall[] = [];
 
         const subscription = observable.subscribe({
           next: (event: BaseEvent) => {
@@ -196,39 +195,33 @@ export function useChat() {
               case EventType.TOOL_CALL_START: {
                 const toolName = (event as any).toolCallName;
                 const toolCallId = (event as any).toolCallId;
-                toolNames[toolCallId] = toolName;
-                traces.push(`🔧 Calling \`${toolName}\`...`);
+                toolCalls.push({ id: toolCallId, name: toolName, status: 'running' });
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
-                      ? { ...m, toolTraces: [...traces] }
+                      ? { ...m, toolCalls: [...toolCalls] }
                       : m
                   )
                 );
                 break;
               }
               case EventType.TOOL_CALL_ARGS: {
-                // Accumulate args delta (optional: could show in trace)
                 break;
               }
               case EventType.TOOL_CALL_END: {
                 const toolCallId = (event as any).toolCallId;
-                const toolName = toolNames[toolCallId] || 'unknown';
-                const idx = traces.findIndex((t) => t.includes(`\`${toolName}\`...`));
-                if (idx >= 0) {
-                  traces[idx] = `✅ \`${toolName}\` done`;
-                }
+                const tc = toolCalls.find((t) => t.id === toolCallId);
+                if (tc) tc.status = 'done';
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
-                      ? { ...m, toolTraces: [...traces] }
+                      ? { ...m, toolCalls: [...toolCalls] }
                       : m
                   )
                 );
                 break;
               }
               case EventType.TEXT_MESSAGE_START: {
-                // Prepare for content accumulation
                 break;
               }
               case EventType.TEXT_MESSAGE_CONTENT: {
@@ -253,7 +246,7 @@ export function useChat() {
                           ...m,
                           content: accumulatedContent,
                           status: 'complete',
-                          toolTraces: traces.length > 0 ? traces : undefined,
+                          toolCalls: toolCalls.length > 0 ? [...toolCalls] : undefined,
                         }
                       : m
                   )
