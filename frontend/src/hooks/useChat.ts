@@ -1,15 +1,17 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Message, WebhookConfig } from '@/types/chat';
+import { HttpAgent, EventType } from '@ag-ui/client';
+import type { BaseEvent } from '@ag-ui/core';
+import type { Message, WebhookConfig } from '@/types/chat';
 
-const WEBHOOK_STORAGE_KEY = 'voltchat-webhook-url';
+const WEBHOOK_STORAGE_KEY = 'voltchat-api-url';
 const MESSAGES_STORAGE_KEY = 'voltchat-messages';
 const SESSION_ID_STORAGE_KEY = 'voltchat-session-id';
 const STREAMING_ENABLED_KEY = 'voltchat-streaming-enabled';
 
-const generateId = () => Math.random().toString(36).substring(2, 15);
+const generateId = () => crypto.randomUUID();
 
 export function useChat() {
-  const ENV_WEBHOOK_URL = import.meta.env.VITE_WEBHOOK_URL;
+  const ENV_API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   const ENV_API_TOKEN = import.meta.env.VITE_API_TOKEN;
   const ENV_UPLOAD_URL = import.meta.env.VITE_UPLOAD_URL;
   const ENV_APP_NAME = import.meta.env.VITE_APP_NAME || 'VoltChat';
@@ -21,9 +23,9 @@ export function useChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [webhookConfig, setWebhookConfig] = useState<WebhookConfig>({
-    url: ENV_WEBHOOK_URL || '',
-    isConnected: !!ENV_WEBHOOK_URL,
-    isExternal: !!ENV_WEBHOOK_URL, // Track if it's fixed via Env
+    url: ENV_API_BASE_URL || '',
+    isConnected: !!ENV_API_BASE_URL,
+    isExternal: !!ENV_API_BASE_URL,
   });
   const [isStreamingEnabled, setIsStreamingEnabled] = useState(true);
   const [sessionId, setSessionId] = useState<string>(() => {
@@ -34,16 +36,15 @@ export function useChat() {
     }
     return savedSessionId;
   });
-  const streamCleanupRef = useRef<(() => void) | null>(null);
+  const subscriptionRef = useRef<{ unsubscribe: () => void } | null>(null);
   const [treeVersion, setTreeVersion] = useState(0);
 
-  // Load from localStorage on mount
   useEffect(() => {
     const savedUrl = localStorage.getItem(WEBHOOK_STORAGE_KEY);
     const savedMessages = localStorage.getItem(MESSAGES_STORAGE_KEY);
     const savedStreaming = localStorage.getItem(STREAMING_ENABLED_KEY);
 
-    if (!ENV_WEBHOOK_URL && savedUrl) {
+    if (!ENV_API_BASE_URL && savedUrl) {
       setWebhookConfig({ url: savedUrl, isConnected: true, isExternal: false });
     }
 
@@ -67,245 +68,136 @@ export function useChat() {
     }
   }, []);
 
-  // Persist messages to localStorage
   useEffect(() => {
     if (messages.length > 0) {
       localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(messages));
     }
   }, [messages]);
 
-  // Persist streaming setting to localStorage
   useEffect(() => {
     localStorage.setItem(STREAMING_ENABLED_KEY, JSON.stringify(isStreamingEnabled));
   }, [isStreamingEnabled]);
 
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+    localStorage.removeItem(MESSAGES_STORAGE_KEY);
+    const newSessionId = generateId();
+    sessionStorage.setItem(SESSION_ID_STORAGE_KEY, newSessionId);
+    setSessionId(newSessionId);
+  }, []);
 
+  const updateWebhookUrl = useCallback((url: string) => {
+    if (ENV_API_BASE_URL) return;
+    const trimmedUrl = url.trim();
+    localStorage.setItem(WEBHOOK_STORAGE_KEY, trimmedUrl);
+    setWebhookConfig({
+      url: trimmedUrl,
+      isConnected: trimmedUrl.length > 0,
+      isExternal: false,
+    });
+    clearMessages();
+  }, [clearMessages, ENV_API_BASE_URL]);
 
-    const clearMessages = useCallback(() => {
-      setMessages([]);
-      localStorage.removeItem(MESSAGES_STORAGE_KEY);
-      const newSessionId = generateId();
-      sessionStorage.setItem(SESSION_ID_STORAGE_KEY, newSessionId);
-      setSessionId(newSessionId);
-    }, []);
-  
-    const updateWebhookUrl = useCallback((url: string) => {
-      if (ENV_WEBHOOK_URL) return; // Prevent manual updates if env var is set
-      const trimmedUrl = url.trim();
-      localStorage.setItem(WEBHOOK_STORAGE_KEY, trimmedUrl);
-      setWebhookConfig({
-        url: trimmedUrl,
-        isConnected: trimmedUrl.length > 0,
-        isExternal: false,
-      });
-      clearMessages();
-    }, [clearMessages, ENV_WEBHOOK_URL]);
-  
-    const toggleStreaming = useCallback(() => {
-      setIsStreamingEnabled((prev) => !prev);
-    }, []);
+  const toggleStreaming = useCallback(() => {
+    setIsStreamingEnabled((prev) => !prev);
+  }, []);
 
-    const stopStreaming = useCallback(() => {
-      if (streamCleanupRef.current) {
-        streamCleanupRef.current();
-        streamCleanupRef.current = null;
-      }
-      setMessages(prev => prev.map(m => m.status === 'streaming' ? { ...m, status: 'complete' } : m));
-      setIsLoading(false);
-    }, []);
-  
-    const simulateStreaming = useCallback(
-      (messageId: string, fullContent: string) => {
-        let currentIndex = 0;
-        const chunkSize = 2 + Math.floor(Math.random() * 3); // 2-4 chars at a time
-        const baseDelay = 20; // ms between chunks
-  
-        const streamInterval = setInterval(() => {
-          currentIndex += chunkSize;
-  
-          if (currentIndex >= fullContent.length) {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === messageId
-                  ? { ...m, content: fullContent, status: 'complete' }
-                  : m
-              )
-            );
-            clearInterval(streamInterval);
-            setIsLoading(false);
-            streamCleanupRef.current = null;
+  const stopStreaming = useCallback(() => {
+    if (subscriptionRef.current) {
+      subscriptionRef.current.unsubscribe();
+      subscriptionRef.current = null;
+    }
+    setMessages(prev => prev.map(m => m.status === 'streaming' ? { ...m, status: 'complete' } : m));
+    setIsLoading(false);
+  }, []);
+
+  const sendMessage = useCallback(
+    async (content: string) => {
+      if (!content.trim() || isLoading) return;
+
+      setIsLoading(true);
+      const userMessage: Message = {
+        id: generateId(),
+        role: 'user',
+        content: content.trim(),
+        timestamp: new Date(),
+        status: 'complete',
+      };
+
+      setMessages((prev) => [...prev, userMessage]);
+
+      const assistantMessageId = generateId();
+      const placeholderMessage: Message = {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
+        status: 'streaming',
+        toolTraces: [],
+      };
+
+      setMessages((prev) => [...prev, placeholderMessage]);
+
+      if (!webhookConfig.url) {
+        const demoResponse = getDemoResponse(content);
+        setTimeout(() => {
+          if (isStreamingEnabled) {
+            simulateStreaming(assistantMessageId, demoResponse);
           } else {
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === messageId
-                  ? { ...m, content: fullContent.slice(0, currentIndex) }
+                m.id === assistantMessageId
+                  ? { ...m, content: demoResponse, status: 'complete' }
                   : m
               )
             );
+            setIsLoading(false);
           }
-        }, baseDelay + Math.random() * 15);
-  
-        streamCleanupRef.current = () => clearInterval(streamInterval);
-      },
-      []
-    );
-  
-    const sendMessage = useCallback(
-      async (content: string) => {
-        if (!content.trim() || isLoading) return;
-  
-        setIsLoading(true);
-        const userMessage: Message = {
-          id: generateId(),
-          role: 'user',
-          content: content.trim(),
-          timestamp: new Date(),
-          status: 'complete',
-        };
-  
-        setMessages((prev) => [...prev, userMessage]);
-  
-        const assistantMessageId = generateId();
-        const placeholderMessage: Message = {
-          id: assistantMessageId,
-          role: 'assistant',
-          content: '',
-          timestamp: new Date(),
-          status: 'streaming',
-          toolTraces: [],
-        };
-  
-        setMessages((prev) => [...prev, placeholderMessage]);
-  
-        try {
-          if (!webhookConfig.url) {
-            // Demo mode - simulate a response
-            const demoResponse = getDemoResponse(content);
-            setTimeout(() => {
-              if (isStreamingEnabled) {
-                simulateStreaming(assistantMessageId, demoResponse);
-              } else {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessageId
-                      ? { ...m, content: demoResponse, status: 'complete' }
-                      : m
-                  )
-                );
-                setIsLoading(false);
-              }
-            }, 300);
-            return;
-          }
-  
-          // Determine the correct URL for streaming vs non-streaming
-          const baseUrl = webhookConfig.url;
-          const streamUrl = isStreamingEnabled
-            ? baseUrl.replace(/\/chat\/?$/, '/chat/stream')
-            : baseUrl;
+        }, 300);
+        return;
+      }
 
-          console.log(`[useChat] Sending message to: ${streamUrl}`, {
-            message: content.trim(),
-            sessionId,
-            streaming: isStreamingEnabled,
-          });
+      try {
+        const agent = new HttpAgent({
+          url: `${webhookConfig.url}/agui`,
+          threadId: sessionId,
+          initialState: { session_id: sessionId },
+        });
 
-          const response = await fetch(streamUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(ENV_API_TOKEN ? { 'Authorization': `Bearer ${ENV_API_TOKEN}` } : {}),
-            },
-            body: JSON.stringify({
-              message: content.trim(),
-              timestamp: new Date().toISOString(),
-              sessionId,
-            }),
-          });
+        // Build AG-UI messages from our message history
+        const aguiMessages = messages
+          .filter((m) => m.role === 'user' || m.role === 'assistant')
+          .map((m) => ({
+            id: m.id,
+            role: m.role as 'user' | 'assistant',
+            content: m.content || undefined,
+          }));
 
-          console.log(`[useChat] Response status: ${response.status} ${response.statusText}`);
-  
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
+        const observable = agent.run({
+          threadId: sessionId,
+          runId: crypto.randomUUID(),
+          messages: [
+            ...aguiMessages,
+            { id: userMessage.id, role: 'user' as const, content: content.trim() },
+          ],
+          state: { session_id: sessionId },
+          tools: [],
+          context: [],
+          forwardedProps: {},
+        });
 
-          if (isStreamingEnabled && response.body) {
-            // --- Real streaming via ReadableStream ---
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let accumulatedContent = '';
-            const traces: string[] = [];
-            let cancelled = false;
+        let accumulatedContent = '';
+        const traces: string[] = [];
+        const toolNames: Record<string, string> = {};
 
-            streamCleanupRef.current = () => {
-              cancelled = true;
-              reader.cancel();
-            };
-
-            let buffer = '';
-            let isReadingThoughts = true;
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done || cancelled) break;
-
-              const chunk = decoder.decode(value, { stream: !done });
-              
-              if (isReadingThoughts) {
-                buffer += chunk;
-                
-                // Process complete lines from the buffer
-                let newlineIndex;
-                while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-                  const line = buffer.slice(0, newlineIndex);
-                  buffer = buffer.slice(newlineIndex + 1);
-                  
-                  if (line.startsWith('__THOUGHT__:')) {
-                    const thought = line.slice('__THOUGHT__:'.length);
-                    traces.push(thought);
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMessageId
-                          ? { ...m, toolTraces: [...traces] }
-                          : m
-                      )
-                    );
-                  } else {
-                    // We found a complete line that is NOT a thought!
-                    // This means thoughts are finished.
-                    isReadingThoughts = false;
-                    // Append this line and the newline back, plus whatever is left in the buffer
-                    accumulatedContent += line + '\n' + buffer;
-                    buffer = ''; // Clear buffer since we moved it
-                    
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === assistantMessageId
-                          ? { ...m, content: accumulatedContent }
-                          : m
-                      )
-                    );
-                    break;
-                  }
-                }
-              } else {
-                // Thoughts are finished, stream the remaining text directly
-                accumulatedContent += chunk;
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessageId
-                      ? { ...m, content: accumulatedContent }
-                      : m
-                  )
-                );
-              }
-            }
-
-            // Handle any residual buffer if the stream finishes without newline
-            if (isReadingThoughts && buffer.length > 0) {
-              if (buffer.startsWith('__THOUGHT__:')) {
-                const thought = buffer.slice('__THOUGHT__:'.length);
-                traces.push(thought);
+        const subscription = observable.subscribe({
+          next: (event: BaseEvent) => {
+            switch (event.type) {
+              case EventType.TOOL_CALL_START: {
+                const toolName = (event as any).toolCallName;
+                const toolCallId = (event as any).toolCallId;
+                toolNames[toolCallId] = toolName;
+                traces.push(`🔧 Calling \`${toolName}\`...`);
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
@@ -313,190 +205,262 @@ export function useChat() {
                       : m
                   )
                 );
-              } else {
-                accumulatedContent += buffer;
+                break;
+              }
+              case EventType.TOOL_CALL_ARGS: {
+                // Accumulate args delta (optional: could show in trace)
+                break;
+              }
+              case EventType.TOOL_CALL_END: {
+                const toolCallId = (event as any).toolCallId;
+                const toolName = toolNames[toolCallId] || 'unknown';
+                const idx = traces.findIndex((t) => t.includes(`\`${toolName}\`...`));
+                if (idx >= 0) {
+                  traces[idx] = `✅ \`${toolName}\` done`;
+                }
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
-                      ? { ...m, content: accumulatedContent }
+                      ? { ...m, toolTraces: [...traces] }
                       : m
                   )
                 );
+                break;
+              }
+              case EventType.TEXT_MESSAGE_START: {
+                // Prepare for content accumulation
+                break;
+              }
+              case EventType.TEXT_MESSAGE_CONTENT: {
+                const delta = (event as any).delta;
+                if (delta) {
+                  accumulatedContent += delta;
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === assistantMessageId
+                        ? { ...m, content: accumulatedContent }
+                        : m
+                    )
+                  );
+                }
+                break;
+              }
+              case EventType.TEXT_MESSAGE_END: {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessageId
+                      ? {
+                          ...m,
+                          content: accumulatedContent,
+                          status: 'complete',
+                          toolTraces: traces.length > 0 ? traces : undefined,
+                        }
+                      : m
+                  )
+                );
+                break;
+              }
+              case EventType.RUN_FINISHED: {
+                setIsLoading(false);
+                subscriptionRef.current = null;
+                if (accumulatedContent.includes('Repository initialized') || accumulatedContent.includes('analyzed the codebase')) {
+                  setTreeVersion((v) => v + 1);
+                }
+                break;
+              }
+              case EventType.RUN_ERROR: {
+                const errorMsg = (event as any).message || 'Unknown error';
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessageId
+                      ? { ...m, content: `Error: ${errorMsg}`, status: 'error' }
+                      : m
+                  )
+                );
+                setIsLoading(false);
+                subscriptionRef.current = null;
+                break;
               }
             }
+          },
+          complete: () => {
+            setIsLoading(false);
+            subscriptionRef.current = null;
+          },
+          error: (err: Error) => {
+            console.error('[useChat] AG-UI stream error:', err);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMessageId
+                  ? { ...m, content: `Error: ${err.message}`, status: 'error' }
+                  : m
+              )
+            );
+            setIsLoading(false);
+            subscriptionRef.current = null;
+          },
+        });
 
-            // Finalize the message
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMessageId
-                  ? { 
-                      ...m, 
-                      content: accumulatedContent, 
-                      status: 'complete', 
-                      toolTraces: traces.length > 0 ? traces : undefined 
-                    }
-                  : m
-              )
-            );
-            setIsLoading(false);
-            streamCleanupRef.current = null;
-            // Trigger a tree refresh if the response looks like a repo init
-            if (accumulatedContent.includes('Repository initialized') || accumulatedContent.includes('analyzed the codebase')) {
-              setTreeVersion((v) => v + 1);
-            }
-          } else {
-            // --- Non-streaming: regular JSON response ---
-            const data = await response.json();
-            console.log('[useChat] Received data:', data);
-            const responseContent =
-              (typeof data.output === 'object' ? data.output?.response : data.output) ||
-              data.response ||
-              data.message ||
-              data.content ||
-              JSON.stringify(data);
-  
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMessageId
-                  ? { 
-                      ...m, 
-                      content: responseContent, 
-                      status: 'complete',
-                      toolTraces: data.tool_events && data.tool_events.length > 0 ? data.tool_events : undefined
-                    }
-                  : m
-              )
-            );
-            setIsLoading(false);
-            // Trigger a tree refresh if the response looks like a repo init
-            if (responseContent.includes('Repository initialized') || responseContent.includes('analyzed the codebase')) {
-              setTreeVersion((v) => v + 1);
-            }
-          }
-        } catch (error) {
-          console.error('[useChat] Send message error:', error);
-          const errorMessage =
-            error instanceof Error ? error.message : 'Connection failed';
-  
+        subscriptionRef.current = subscription;
+      } catch (error) {
+        console.error('[useChat] Send message error:', error);
+        const errorMessage =
+          error instanceof Error ? error.message : 'Connection failed';
+
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMessageId
+              ? {
+                  ...m,
+                  content: `Error: ${errorMessage}. Check your API URL and try again.`,
+                  status: 'error',
+                }
+              : m
+          )
+        );
+        setIsLoading(false);
+      }
+    },
+    [webhookConfig.url, isLoading, sessionId, isStreamingEnabled, messages]
+  );
+
+  const simulateStreaming = useCallback(
+    (messageId: string, fullContent: string) => {
+      let currentIndex = 0;
+      const chunkSize = 2 + Math.floor(Math.random() * 3);
+      const baseDelay = 20;
+
+      const streamInterval = setInterval(() => {
+        currentIndex += chunkSize;
+
+        if (currentIndex >= fullContent.length) {
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantMessageId
-                ? {
-                    ...m,
-                    content: `Error: ${errorMessage}. Check your webhook URL and try again.`,
-                    status: 'error',
-                  }
+              m.id === messageId
+                ? { ...m, content: fullContent, status: 'complete' }
                 : m
             )
           );
+          clearInterval(streamInterval);
           setIsLoading(false);
+          subscriptionRef.current = null;
+        } else {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId
+                ? { ...m, content: fullContent.slice(0, currentIndex) }
+                : m
+            )
+          );
         }
-      },
-      [webhookConfig.url, isLoading, simulateStreaming, sessionId, isStreamingEnabled]
-    );
-  
-    const retryLastMessage = useCallback(() => {
-      const lastUserMessage = [...messages]
-        .reverse()
-        .find((m) => m.role === 'user');
-      if (lastUserMessage) {
-        setMessages((prev) => prev.slice(0, -1));
-        sendMessage(lastUserMessage.content);
+      }, baseDelay + Math.random() * 15);
+
+      subscriptionRef.current = { unsubscribe: () => clearInterval(streamInterval) };
+    },
+    []
+  );
+
+  const retryLastMessage = useCallback(() => {
+    const lastUserMessage = [...messages]
+      .reverse()
+      .find((m) => m.role === 'user');
+    if (lastUserMessage) {
+      setMessages((prev) => prev.slice(0, -1));
+      sendMessage(lastUserMessage.content);
+    }
+  }, [messages, sendMessage]);
+
+  const uploadFile = useCallback(async (file: File) => {
+    if (!ENV_UPLOAD_URL) {
+      console.warn('VITE_UPLOAD_URL is not configured');
+      return { success: false, message: 'Upload URL not configured' };
+    }
+
+    setIsLoading(true);
+    try {
+      console.log(`[useChat] Uploading file to: ${ENV_UPLOAD_URL}`, { fileName: file.name, fileSize: file.size });
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(ENV_UPLOAD_URL, {
+        method: 'POST',
+        headers: {
+          ...(ENV_API_TOKEN ? { 'Authorization': `Bearer ${ENV_API_TOKEN}` } : {}),
+        },
+        body: formData,
+      });
+
+      console.log(`[useChat] Upload response status: ${response.status}`);
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.statusText}`);
       }
-    }, [messages, sendMessage]);
 
-    const uploadFile = useCallback(async (file: File) => {
-      if (!ENV_UPLOAD_URL) {
-        console.warn('VITE_UPLOAD_URL is not configured');
-        return { success: false, message: 'Upload URL not configured' };
-      }
+      const data = await response.json();
+      console.log('[useChat] Upload success data:', data);
+      
+      const systemMessage: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: `Successfully uploaded file: **${file.name}**`,
+        timestamp: new Date(),
+        status: 'complete',
+      };
+      setMessages(prev => [...prev, systemMessage]);
 
-      setIsLoading(true);
-      try {
-        console.log(`[useChat] Uploading file to: ${ENV_UPLOAD_URL}`, { fileName: file.name, fileSize: file.size });
-        const formData = new FormData();
-        formData.append('file', file);
-
-        const response = await fetch(ENV_UPLOAD_URL, {
-          method: 'POST',
-          headers: {
-            ...(ENV_API_TOKEN ? { 'Authorization': `Bearer ${ENV_API_TOKEN}` } : {}),
-          },
-          body: formData,
-        });
-
-        console.log(`[useChat] Upload response status: ${response.status}`);
-
-        if (!response.ok) {
-          throw new Error(`Upload failed: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        console.log('[useChat] Upload success data:', data);
-        
-        // Add a system message about the upload
-        const systemMessage: Message = {
-          id: generateId(),
-          role: 'assistant',
-          content: `Successfully uploaded file: **${file.name}**`,
-          timestamp: new Date(),
-          status: 'complete',
-        };
-        setMessages(prev => [...prev, systemMessage]);
-
-        return { success: true, data };
-      } catch (error) {
-        console.error('[useChat] Upload error:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Upload failed';
-        const errorMsg: Message = {
-          id: generateId(),
-          role: 'assistant',
-          content: `Error uploading file: ${errorMessage}`,
-          timestamp: new Date(),
-          status: 'error',
-        };
-        setMessages(prev => [...prev, errorMsg]);
-        return { success: false, message: errorMessage };
-      } finally {
-        setIsLoading(false);
-      }
-    }, [ENV_UPLOAD_URL, ENV_API_TOKEN]);
+      return { success: true, data };
+    } catch (error) {
+      console.error('[useChat] Upload error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+      const errorMsg: Message = {
+        id: generateId(),
+        role: 'assistant',
+        content: `Error uploading file: ${errorMessage}`,
+        timestamp: new Date(),
+        status: 'error',
+      };
+      setMessages(prev => [...prev, errorMsg]);
+      return { success: false, message: errorMessage };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [ENV_UPLOAD_URL, ENV_API_TOKEN]);
   			
-    return {
-      messages,
-      isLoading,
-      webhookConfig,
-      isStreamingEnabled,
-      sendMessage,
-      updateWebhookUrl,
-      toggleStreaming,
-      clearMessages,
-      retryLastMessage,
-      stopStreaming,
-      uploadFile,
-      hasUploadConfig: !!ENV_UPLOAD_URL && ENV_ENABLE_UPLOADS,
-      appName: ENV_APP_NAME,
-      appDescription: ENV_APP_DESCRIPTION,
-      appLogoUrl: ENV_APP_LOGO_URL,
-      sessionId,
-      treeVersion,
-    };
-  }
+  return {
+    messages,
+    isLoading,
+    webhookConfig,
+    isStreamingEnabled,
+    sendMessage,
+    updateWebhookUrl,
+    toggleStreaming,
+    clearMessages,
+    retryLastMessage,
+    stopStreaming,
+    uploadFile,
+    hasUploadConfig: !!ENV_UPLOAD_URL && ENV_ENABLE_UPLOADS,
+    appName: ENV_APP_NAME,
+    appDescription: ENV_APP_DESCRIPTION,
+    appLogoUrl: ENV_APP_LOGO_URL,
+    sessionId,
+    treeVersion,
+  };
+}
+
 function getDemoResponse(input: string): string {
   const responses = [
-    "I'm VoltChat running in demo mode. Configure a webhook URL to connect to your AI backend.",
+    "I'm VoltChat running in demo mode. Configure an API URL to connect to your AI backend.",
     "This is a simulated response. Your message was received instantly — that's the VoltChat difference.",
-    "Demo mode active. Set up your webhook endpoint to see real AI responses with the same electric speed.",
-    "How far connect your webhook now.. wetin dey worry you sef😂",
-    "No webhook configured. I'm showing you how fast responses feel in VoltChat. Ready to connect your backend?",
+    "Demo mode active. Set up your API endpoint to see real AI responses with the same electric speed.",
+    "No API configured. I'm showing you how fast responses feel in VoltChat. Ready to connect your backend?",
   ];
 
   if (input.toLowerCase().includes('hello') || input.toLowerCase().includes('hi')) {
     return "Connected. Ready. What can I help you build today?";
   }
 
-  if (input.toLowerCase().includes('webhook')) {
-    return "Click the ⚡ icon in the top right to configure your webhook URL. VoltChat will POST your messages and display responses with simulated streaming.";
+  if (input.toLowerCase().includes('api') || input.toLowerCase().includes('webhook')) {
+    return "Click the ⚡ icon in the top right to configure your API URL. VoltChat will connect to your Repo Reader backend.";
   }
 
   return responses[Math.floor(Math.random() * responses.length)];

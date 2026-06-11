@@ -16,7 +16,7 @@ services:
       dockerfile: Dockerfile
       args:
         # Connect to the backend through the Nginx reverse proxy using the /api route
-        - VITE_WEBHOOK_URL=/api/chat
+        - VITE_API_BASE_URL=/api
     container_name: repo-reader-frontend
     restart: unless-stopped
     ports:

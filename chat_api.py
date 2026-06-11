@@ -1,11 +1,10 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, AliasGenerator
 from pydantic.alias_generators import to_camel
 from typing import List, Dict, Optional, Annotated, Any
-import asyncio
 import uuid
 import shutil
 from pathlib import Path
@@ -14,18 +13,21 @@ import os
 from repo_reader import (
     agent, 
     RepoConfig, 
+    AgentState,
+    StateDeps,
     get_gitignore_spec, 
     clone_repo, 
-    ModelMessage
+    RunContext
 )
+from pydantic_ai.ui.ag_ui import AGUIAdapter
+from sessions import sessions
 
 app = FastAPI(title="Repo Reader API")
 
 # --- CORS Middleware ---
-# Allows your frontend (e.g. React/Vite on localhost:3000 or 5173) to talk to this API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with your specific frontend URLs
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -33,7 +35,6 @@ app.add_middleware(
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Log everything about the request to find the mismatch."""
     body = await request.body()
     print(f"\n[DEBUG] !!! Validation Error !!!")
     print(f"Method: {request.method}")
@@ -47,14 +48,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": exc.errors(), "body": body.decode(), "message": "Backend received an empty or invalid body."},
     )
 
-# --- In-Memory State ---
-# In a production app, use a database and persistent storage (like Redis)
-sessions: Dict[str, Dict] = {}
-
 def get_friendly_name(target: str) -> str:
     """Get a user-friendly name from the repository target URL or path."""
     if target.startswith(("http://", "https://", "git@", "github.com")):
-        # Extract repo name from URL
         parts = target.rstrip("/").split("/")
         if parts:
             name = parts[-1]
@@ -62,7 +58,6 @@ def get_friendly_name(target: str) -> str:
                 name = name[:-4]
             return name
     else:
-        # Extract folder name
         try:
             return Path(target).name or target
         except Exception:
@@ -73,7 +68,7 @@ def get_friendly_name(target: str) -> str:
 # --- Schemas ---
 
 class InitializeRequest(BaseModel):
-    repo_target: str  # Can be a local path or GitHub URL
+    repo_target: str
 
 class InitializeResponse(BaseModel):
     session_id: str
@@ -89,12 +84,6 @@ class ChatRequest(BaseModel):
     session_id: str
     message: str
     history: Optional[List[Any]] = None
-
-class ChatResponse(BaseModel):
-    response: str
-    tool_events: Optional[List[str]] = None
-    # we return history in a format that can be sent back
-    # history: List[dict] 
 
 def get_session(session_id: str):
     if session_id not in sessions:
@@ -131,10 +120,23 @@ def _initialize_session_logic(target: str, session_id: str):
     except Exception as e:
         raise e
 
+# --- AG-UI Tool: initialize_repo ---
+
+@agent.tool
+async def initialize_repo(ctx: RunContext[StateDeps[AgentState]], repo_target: str) -> str:
+    """Initialize a repository from a URL or local path when no session exists yet."""
+    session_id = ctx.deps.state.session_id
+    try:
+        root = _initialize_session_logic(repo_target, session_id)
+        friendly_name = get_friendly_name(repo_target)
+        return f"Repository '{friendly_name}' initialized. You can now explore the codebase."
+    except Exception as e:
+        return f"Failed to initialize repository: {str(e)}"
+
 # --- Endpoints ---
 
 @app.post("/initialize", response_model=InitializeResponse)
-async def initialize_repo(request_body: Optional[InitializeRequest] = None, repo_target: Optional[str] = None):
+async def initialize_repo_endpoint(request_body: Optional[InitializeRequest] = None, repo_target: Optional[str] = None):
     """Initialize a repo. Accepts target from body OR query string."""
     target = repo_target or (request_body.repo_target if request_body else None)
     
@@ -152,192 +154,6 @@ async def initialize_repo(request_body: Optional[InitializeRequest] = None, repo
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/chat", response_model=ChatResponse)
-async def chat_with_repo(
-    request_body: Optional[ChatRequest] = None, 
-    session_id: Optional[str] = None, 
-    message: Optional[str] = None
-):
-    """Chat with repo. Accepts data from body OR query string."""
-    sid = session_id or (request_body.session_id if request_body else None)
-    msg = message or (request_body.message if request_body else None)
-    history = request_body.history if request_body else None
-
-    if not sid or not msg:
-        raise HTTPException(status_code=400, detail="session_id and message are required")
-
-    session = sessions.get(sid)
-    if not session:
-        # Check if the message looks like a repository URL or path
-        is_url = msg.startswith(("http://", "https://", "git@", "github.com"))
-        is_path = os.path.isabs(msg) or (msg.startswith(".") and ("/" in msg or "\\" in msg))
-        
-        if is_url or is_path:
-            try:
-                root = _initialize_session_logic(msg, sid)
-                friendly_name = get_friendly_name(msg)
-                return ChatResponse(
-                    response=f"✅ Repository initialized from: **{msg}**\n\nI've analyzed the codebase **{friendly_name}**. What would you like to know about it?"
-                )
-            except Exception as e:
-                return ChatResponse(
-                    response=f"❌ Failed to initialize repository: {str(e)}\n\nPlease ensure the URL or path is correct."
-                )
-        else:
-            return ChatResponse(
-                response="👋 Welcome! To get started, please **drop a repository URL** (e.g., a GitHub link) or a local directory path here."
-            )
-
-    config = session["config"]
-    config.tool_events = []
-    # If no history provided in request, use the one in session
-    hist = history if history is not None else session["history"]
-
-    try:
-        # Run the agent using the async run method
-        result = await agent.run(
-            msg,
-            deps=config,
-            message_history=hist
-        )
-
-        # Update history in session
-        session["history"] = result.new_messages()
-
-        return ChatResponse(
-            response=result.output,
-            tool_events=config.tool_events
-        )
-
-    except Exception as e:
-        import traceback
-        print(f"Error in chat_with_repo: {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/chat/stream")
-async def chat_with_repo_stream(
-    request_body: Optional[ChatRequest] = None,
-    session_id: Optional[str] = None,
-    message: Optional[str] = None
-):
-    """Streaming version. Accepts data from body OR query string."""
-    sid = session_id or (request_body.session_id if request_body else None)
-    msg = message or (request_body.message if request_body else None)
-    history = request_body.history if request_body else None
-
-    if not sid or not msg:
-        raise HTTPException(status_code=400, detail="session_id and message are required")
-
-    session = sessions.get(sid)
-    if not session:
-        is_url = msg.startswith(("http://", "https://", "git@", "github.com"))
-        is_path = os.path.isabs(msg) or (msg.startswith(".") and ("/" in msg or "\\" in msg))
-        
-        async def init_generator():
-            if is_url or is_path:
-                try:
-                    root = _initialize_session_logic(msg, sid)
-                    friendly_name = get_friendly_name(msg)
-                    yield f"✅ Repository initialized from: **{msg}**\n\nI've analyzed the codebase **{friendly_name}**. What would you like to know about it?"
-                except Exception as e:
-                    yield f"❌ Failed to initialize repository: {str(e)}\n\nPlease ensure the URL or path is correct."
-            else:
-                yield "👋 Welcome! To get started, please **drop a repository URL** (e.g., a GitHub link) or a local directory path here."
-        
-        return StreamingResponse(init_generator(), media_type="text/event-stream")
-
-    config = session["config"]
-    hist = history if history is not None else session["history"]
-
-    # Use an asyncio.Queue so tool events stream to the client in real-time.
-    # Tools are sync (run in a thread-pool), so we use call_soon_threadsafe.
-    event_queue: asyncio.Queue = asyncio.Queue()
-    loop = asyncio.get_running_loop()
-
-    class _LiveEventList(list):
-        """A list subclass that also pushes items onto an asyncio.Queue.
-        Called from sync tools running in a thread-pool executor,
-        so we must use call_soon_threadsafe."""
-        def append(self, item):
-            super().append(item)
-            loop.call_soon_threadsafe(event_queue.put_nowait, item)
-
-    config.tool_events = _LiveEventList()
-    stream_done = asyncio.Event()
-
-    async def event_generator():
-        # Yield an immediate initialization trace at second 0 to flush connections
-        # and give visual feedback to the user while LLM starts thinking.
-        yield "__THOUGHT__:🚀 Initializing agent run...\n"
-
-        stream_result_holder: list = []
-
-        async def run_agent():
-            """Background task: enters the agent context manager (runs all tool
-            calls), then signals the generator with the stream result."""
-            try:
-                async with agent.run_stream(
-                    msg,
-                    deps=config,
-                    message_history=hist
-                ) as result:
-                    # Tools are done — hand the stream result to the generator.
-                    # We are on the event loop here, so put_nowait is safe.
-                    event_queue.put_nowait(("__STREAM_START__", result))
-                    # Keep the context manager alive while the generator
-                    # consumes the text stream
-                    await stream_done.wait()
-                    # Update history after streaming is fully consumed
-                    session["history"] = result.new_messages()
-            except Exception as e:
-                event_queue.put_nowait(("__ERROR__", e))
-
-        task = asyncio.create_task(run_agent())
-
-        try:
-            # Phase 1: yield tool events in real-time as they arrive
-            while True:
-                item = await event_queue.get()
-                if isinstance(item, tuple):
-                    tag = item[0]
-                    if tag == "__STREAM_START__":
-                        stream_result_holder.append(item[1])
-                        break
-                    elif tag == "__ERROR__":
-                        import traceback
-                        print(f"Error in chat_with_repo_stream: {item[1]}")
-                        traceback.print_exc()
-                        yield f"\n\n[Error]: {str(item[1])}"
-                        return
-                else:
-                    # item is a tool-event string
-                    yield f"__THOUGHT__:{item}\n"
-
-            # Phase 2: stream the model's text response
-            result = stream_result_holder[0]
-            async for message in result.stream_text():
-                yield message
-
-        except Exception as e:
-            import traceback
-            print(f"Error in chat_with_repo_stream: {e}")
-            traceback.print_exc()
-            yield f"\n\n[Error]: {str(e)}"
-        finally:
-            stream_done.set()
-            await task
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
-    )
 
 @app.get("/tree/{session_id}")
 async def get_file_tree(session_id: str):
@@ -393,11 +209,20 @@ async def close_session(session_id: str):
     
     return {"message": "Session closed and temporary files cleaned up"}
 
+# --- Mount AG-UI endpoint ---
+
+@app.post("/agui")
+async def agui_endpoint(request: Request):
+    return await AGUIAdapter.dispatch_request(
+        request, 
+        agent=agent,
+        deps=StateDeps(AgentState())
+    )
+
 if __name__ == "__main__":
     import uvicorn
     import sys
     
-    # Simple port parsing from command line
     port = 7643
     if "--port" in sys.argv:
         try:

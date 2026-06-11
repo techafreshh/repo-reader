@@ -8,13 +8,16 @@ import tempfile
 import shutil
 import mimetypes
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.ui import StateDeps
 from pydantic_ai.messages import ModelMessage
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.markdown import Markdown
 import pathspec
+
+from sessions import sessions
 
 # Load environment variables
 load_dotenv()
@@ -27,7 +30,9 @@ class RepoConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     root_path: Path
     gitignore_spec: Optional[pathspec.PathSpec] = None
-    tool_events: List[str] = Field(default_factory=list)
+
+class AgentState(BaseModel):
+    session_id: str = ""
 
 # --- Utilities ---
 
@@ -66,7 +71,7 @@ def clone_repo(url: str) -> Path:
 
 agent = Agent(
     'openrouter:inclusionai/ling-2.6-flash',
-    deps_type=RepoConfig,
+    deps_type=StateDeps[AgentState],
     description="An AI agent that explores and explains code repositories.",
     system_prompt=(
         "You are an expert software engineer and repository analyst. "
@@ -79,26 +84,32 @@ agent = Agent(
     )
 )
 
+def _get_config(ctx: RunContext[StateDeps[AgentState]]) -> RepoConfig:
+    session = sessions.get(ctx.deps.state.session_id)
+    if not session:
+        raise LookupError("No repository initialized. Please provide a GitHub URL or local path.")
+    return session["config"]
+
 # --- Tools ---
 
 @agent.tool
-def list_files(ctx: RunContext[RepoConfig], subdir: str = ".") -> str:
+def list_files(ctx: RunContext[StateDeps[AgentState]], subdir: str = ".") -> str:
     """Recursively list files in a subdirectory, respecting .gitignore."""
     console.print(f"[bold yellow]Tool Called: list_files({subdir})...[/bold yellow]")
-    ctx.deps.tool_events.append(f"📂 Listing files in `{subdir}`...")
-    target_dir = ctx.deps.root_path / subdir
+    config = _get_config(ctx)
+    target_dir = config.root_path / subdir
     if not target_dir.exists() or not target_dir.is_dir():
         return f"Error: Directory '{subdir}' not found."
 
     files_list = []
     for root, dirs, files in os.walk(target_dir):
         # Filter directories in-place to avoid walking into ignored ones
-        dirs[:] = [d for d in dirs if not is_ignored(Path(root) / d, ctx.deps.root_path, ctx.deps.gitignore_spec)]
+        dirs[:] = [d for d in dirs if not is_ignored(Path(root) / d, config.root_path, config.gitignore_spec)]
         
         for file in files:
             path = Path(root) / file
-            if not is_ignored(path, ctx.deps.root_path, ctx.deps.gitignore_spec):
-                files_list.append(str(path.relative_to(ctx.deps.root_path)))
+            if not is_ignored(path, config.root_path, config.gitignore_spec):
+                files_list.append(str(path.relative_to(config.root_path)))
 
     if not files_list:
         return "No files found (or all are ignored)."
@@ -125,14 +136,14 @@ def is_binary(path: Path) -> bool:
     return False
 
 @agent.tool
-def read_file(ctx: RunContext[RepoConfig], filepath: str) -> str:
+def read_file(ctx: RunContext[StateDeps[AgentState]], filepath: str) -> str:
     """Read the full content of a file."""
     console.print(f"[bold yellow]Tool Called: read_file({filepath})...[/bold yellow]")
-    ctx.deps.tool_events.append(f"📖 Reading `{filepath}`...")
-    path = ctx.deps.root_path / filepath
+    config = _get_config(ctx)
+    path = config.root_path / filepath
     if not path.exists():
         return f"Error: File '{filepath}' not found."
-    if is_ignored(path, ctx.deps.root_path, ctx.deps.gitignore_spec):
+    if is_ignored(path, config.root_path, config.gitignore_spec):
         return f"Error: File '{filepath}' is ignored by .gitignore."
     
     if is_binary(path):
@@ -145,18 +156,18 @@ def read_file(ctx: RunContext[RepoConfig], filepath: str) -> str:
         return f"Error reading file '{filepath}': {e}"
 
 @agent.tool
-def search_code(ctx: RunContext[RepoConfig], pattern: str) -> str:
+def search_code(ctx: RunContext[StateDeps[AgentState]], pattern: str) -> str:
     """Search for a regex pattern or string across all non-ignored files."""
     console.print(f"[bold yellow]Tool Called: search_code({pattern})...[/bold yellow]")
-    ctx.deps.tool_events.append(f"🔍 Searching for `{pattern}`...")
+    config = _get_config(ctx)
     results = []
     regex = re.compile(pattern, re.IGNORECASE)
     
-    for root, dirs, files in os.walk(ctx.deps.root_path):
-        dirs[:] = [d for d in dirs if not is_ignored(Path(root) / d, ctx.deps.root_path, ctx.deps.gitignore_spec)]
+    for root, dirs, files in os.walk(config.root_path):
+        dirs[:] = [d for d in dirs if not is_ignored(Path(root) / d, config.root_path, config.gitignore_spec)]
         for file in files:
             path = Path(root) / file
-            if is_ignored(path, ctx.deps.root_path, ctx.deps.gitignore_spec) or is_binary(path):
+            if is_ignored(path, config.root_path, config.gitignore_spec) or is_binary(path):
                 continue
             
             try:
@@ -164,7 +175,7 @@ def search_code(ctx: RunContext[RepoConfig], pattern: str) -> str:
                 lines = content.splitlines()
                 for i, line in enumerate(lines):
                     if regex.search(line):
-                        rel_path = path.relative_to(ctx.deps.root_path)
+                        rel_path = path.relative_to(config.root_path)
                         results.append(f"{rel_path}:{i+1}: {line.strip()}")
             except:
                 continue
@@ -178,11 +189,11 @@ def search_code(ctx: RunContext[RepoConfig], pattern: str) -> str:
     return "\n".join(results)
 
 @agent.tool
-def get_file_structure(ctx: RunContext[RepoConfig], filepath: str) -> str:
+def get_file_structure(ctx: RunContext[StateDeps[AgentState]], filepath: str) -> str:
     """Provide a high-level summary of a file (classes and functions) without the full body."""
     console.print(f"[bold yellow]Tool Called: get_file_structure({filepath})...[/bold yellow]")
-    ctx.deps.tool_events.append(f"⚡ Analyzing structure of `{filepath}`...")
-    path = ctx.deps.root_path / filepath
+    config = _get_config(ctx)
+    path = config.root_path / filepath
     if not path.exists():
         return f"Error: File '{filepath}' not found."
     
@@ -200,21 +211,20 @@ def get_file_structure(ctx: RunContext[RepoConfig], filepath: str) -> str:
         return f"Error analyzing '{filepath}': {e}"
 
 @agent.tool
-def find_references(ctx: RunContext[RepoConfig], symbol_name: str) -> str:
+def find_references(ctx: RunContext[StateDeps[AgentState]], symbol_name: str) -> str:
     """Find all places where a specific function, class, or variable is used."""
     console.print(f"[bold yellow]Tool Called: find_references({symbol_name})...[/bold yellow]")
-    ctx.deps.tool_events.append(f"🔗 Finding references to `{symbol_name}`...")
     pattern = rf"(?:\W|^){re.escape(symbol_name)}(?:\W|$)"
     return search_code(ctx, pattern)
 
 @agent.tool
-def analyze_python_ast(ctx: RunContext[RepoConfig], filepath: str) -> str:
+def analyze_python_ast(ctx: RunContext[StateDeps[AgentState]], filepath: str) -> str:
     """Parse a Python file using AST to extract classes, functions, decorators, and docstrings.
     This is much more token-efficient than reading the full file and should be preferred
     for getting an overview of Python files."""
     console.print(f"[bold yellow]Tool Called: analyze_python_ast({filepath})...[/bold yellow]")
-    ctx.deps.tool_events.append(f"🧬 AST analysis of `{filepath}`...")
-    path = ctx.deps.root_path / filepath
+    config = _get_config(ctx)
+    path = config.root_path / filepath
     if not path.exists():
         return f"Error: File '{filepath}' not found."
     if not filepath.endswith('.py'):

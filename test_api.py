@@ -1,7 +1,7 @@
 import requests
 import json
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:7643"
 
 def test_api():
     print("Initializing repo...")
@@ -12,13 +12,28 @@ def test_api():
     
     session_id = data["session_id"]
     
-    print("\nSending chat message...")
-    chat_resp = requests.post(f"{BASE_URL}/chat", json={
-        "session_id": session_id,
-        "message": "What files are in this repo?"
-    })
-    print(f"Chat status: {chat_resp.status_code}")
-    print(chat_resp.json()["response"])
+    print("\nSending AG-UI message...")
+    agui_resp = requests.post(
+        f"{BASE_URL}/agui",
+        json={
+            "threadId": session_id,
+            "runId": "test-run-1",
+            "messages": [
+                {"id": "msg-1", "role": "user", "content": "What files are in this repo?"}
+            ],
+            "state": {"session_id": session_id},
+            "tools": [],
+            "context": [],
+            "forwardedProps": {},
+        },
+        stream=True,
+    )
+    print(f"AG-UI status: {agui_resp.status_code}")
+    
+    # Parse SSE response
+    for line in agui_resp.iter_lines(decode_unicode=True):
+        if line:
+            print(f"  {line}")
 
 if __name__ == "__main__":
     test_api()

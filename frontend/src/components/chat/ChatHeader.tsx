@@ -138,10 +138,10 @@ export function ChatHeader({
                 )}
               >
                 <Settings className="h-4 w-4" />
-                <span className="sr-only">Webhook settings</span>
+                <span className="sr-only">API settings</span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Webhook settings</TooltipContent>
+            <TooltipContent side="bottom">API settings</TooltipContent>
           </Tooltip>
         )}
 

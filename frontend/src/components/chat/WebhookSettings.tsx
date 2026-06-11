@@ -36,14 +36,18 @@ export function WebhookSettings({
     setTestError('');
 
     try {
-      console.log(`[WebhookSettings] Testing connection to: ${inputUrl}`);
-      const response = await fetch(inputUrl, {
+      console.log(`[WebhookSettings] Testing connection to: ${inputUrl}/agui`);
+      const response = await fetch(`${inputUrl}/agui`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: 'VoltChat connection test',
-          timestamp: new Date().toISOString(),
-          test: true,
+          threadId: 'test-connection',
+          runId: 'test-run',
+          messages: [{ id: '1', role: 'user', content: 'ping' }],
+          state: {},
+          tools: [],
+          context: [],
+          forwardedProps: {},
         }),
       });
 
@@ -90,7 +94,7 @@ export function WebhookSettings({
         <div className="flex h-14 items-center justify-between border-b border-border px-4">
           <div className="flex items-center gap-2">
             <Link className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold">Webhook Configuration</h2>
+            <h2 className="font-semibold">API Configuration</h2>
           </div>
           <Button
             variant="ghost"
@@ -106,7 +110,7 @@ export function WebhookSettings({
         <div className="p-6 space-y-6">
           <div className="space-y-2">
             <Label htmlFor="webhook-url" className="text-sm font-medium">
-              Webhook URL
+              API URL
             </Label>
             <Input
               id="webhook-url"
@@ -116,7 +120,7 @@ export function WebhookSettings({
                 setInputUrl(e.target.value);
                 setTestStatus('idle');
               }}
-              placeholder="https://your-api.com/webhook"
+              placeholder="http://localhost:7643"
               className={cn(
                 'font-mono text-sm',
                 testStatus === 'success' && 'border-success focus-visible:ring-success',
@@ -124,7 +128,7 @@ export function WebhookSettings({
               )}
             />
             <p className="text-xs text-muted-foreground">
-              VoltChat will POST messages to this endpoint as JSON.
+              Connect to your Repo Reader API server (e.g. http://localhost:7643)
             </p>
           </div>
 
@@ -170,27 +174,36 @@ export function WebhookSettings({
               onClick={handleClear}
               className="w-full text-muted-foreground hover:text-destructive"
             >
-              Clear webhook URL
+              Clear API URL
             </Button>
           )}
 
           {/* Request format info */}
           <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
-            <h3 className="text-sm font-medium">Request Format</h3>
+            <h3 className="text-sm font-medium">AG-UI Protocol</h3>
             <pre className="text-xs font-mono text-muted-foreground overflow-x-auto">
-{`POST /your-endpoint
+{`POST /agui
 Content-Type: application/json
 
 {
-  "message": "User's message",
-  "timestamp": "2024-01-01T12:00:00Z"
+  "threadId": "session-uuid",
+  "runId": "run-uuid",
+  "messages": [
+    { "id": "1", "role": "user", "content": "Hello" }
+  ],
+  "state": { "session_id": "..." },
+  "tools": [],
+  "context": [],
+  "forwardedProps": {}
 }`}
             </pre>
-            <h3 className="text-sm font-medium">Expected Response</h3>
+            <h3 className="text-sm font-medium">SSE Response</h3>
             <pre className="text-xs font-mono text-muted-foreground overflow-x-auto">
-{`{
-  "response": "AI response text"
-}`}
+{`event: TEXT_MESSAGE_START
+event: TEXT_MESSAGE_CONTENT
+data: {"delta": "Hello!"}
+event: TEXT_MESSAGE_END
+event: RUN_FINISHED`}
             </pre>
           </div>
         </div>
