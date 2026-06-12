@@ -28,9 +28,7 @@ export function Sidebar({ onNewChat, webhookConfig, sessionId, treeVersion, onFi
       setIsLoadingTree(true);
       setTreeError(null);
       try {
-        // Derive the base API URL from the webhook URL (e.g. http://host:port/chat -> http://host:port)
-        const baseUrl = webhookConfig.url.replace(/\/chat\/?$/, '');
-        const response = await fetch(`${baseUrl}/tree/${sessionId}`);
+        const response = await fetch(`${webhookConfig.url}/tree/${sessionId}`);
         if (!response.ok) {
           // Session may not be initialized yet — that's fine
           if (response.status === 404) {

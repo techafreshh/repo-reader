@@ -13,12 +13,10 @@ RUN npm ci
 COPY . .
 
 # Accept VITE variables as build args
-ARG VITE_WEBHOOK_URL
+ARG VITE_API_BASE_URL
 
 # Set them as ENV variables for Vite to pick up during build
-# We only set VITE_WEBHOOK_URL here because we want to override it in production.
-# Other variables will be read from the .env file copied above.
-ENV VITE_WEBHOOK_URL=$VITE_WEBHOOK_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
 RUN npm run build
 # (This creates a /dist folder with your static site)
