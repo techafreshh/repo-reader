@@ -160,7 +160,7 @@ async def get_file_tree(session_id: str):
     """Return a nested JSON file tree for the loaded repository."""
     session = sessions.get(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        return {"tree": [], "initialized": False}
 
     config = session["config"]
     root = config.root_path

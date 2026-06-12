@@ -162,6 +162,7 @@ export function useChat() {
           url: `${webhookConfig.url}/agui`,
           threadId: sessionId,
           initialState: { session_id: sessionId },
+          fetch: window.fetch.bind(window),
         });
 
         // Build AG-UI messages from our message history
