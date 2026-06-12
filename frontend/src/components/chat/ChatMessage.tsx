@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { useState } from 'react';
@@ -139,6 +140,7 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
           >
             {message.content && (
               <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
                 components={{
                   code({ inline, className, children, ...props }: any) {
                     const match = /language-(\w+)/.exec(className || '');
