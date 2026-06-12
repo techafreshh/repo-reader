@@ -1,6 +1,6 @@
 import { Message } from '@/types/chat';
 import { cn } from '@/lib/utils';
-import { AlertCircle, RotateCcw, Clipboard, Check, ThumbsUp, ThumbsDown, ChevronRight } from 'lucide-react';
+import { AlertCircle, RotateCcw, Clipboard, Copy, Code, Check, ThumbsUp, ThumbsDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -13,6 +13,80 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { useState } from 'react';
 import { LoadingDots } from './LoadingDots';
+
+interface CodeBlockProps {
+  language: string;
+  value: string;
+}
+
+function CodeBlock({ language, value }: CodeBlockProps) {
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(value).then(() => {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    });
+  };
+
+  const capitalizeLanguage = (lang: string) => {
+    if (!lang) return '';
+    const map: { [key: string]: string } = {
+      javascript: 'JavaScript',
+      typescript: 'TypeScript',
+      html: 'HTML',
+      css: 'CSS',
+      json: 'JSON',
+      bash: 'Bash',
+      shell: 'Shell',
+      python: 'Python',
+      cpp: 'C++',
+      csharp: 'C#',
+      rust: 'Rust',
+      go: 'Go',
+      sql: 'SQL',
+      yaml: 'YAML',
+      markdown: 'Markdown',
+    };
+    return map[lang.toLowerCase()] || lang.charAt(0).toUpperCase() + lang.slice(1);
+  };
+
+  return (
+    <div className="my-4 rounded-xl overflow-hidden border border-zinc-800 bg-[#0d0d0d] text-zinc-100 shadow-md">
+      <div className="flex items-center justify-between px-4 py-2 bg-zinc-900 border-b border-zinc-800/80">
+        <div className="flex items-center gap-2 text-zinc-400 text-xs font-semibold">
+          <Code className="h-3.5 w-3.5" />
+          <span className="text-zinc-200">{capitalizeLanguage(language)}</span>
+        </div>
+        <button
+          onClick={handleCopy}
+          className="p-1 rounded hover:bg-zinc-850 text-zinc-400 hover:text-zinc-250 transition-colors"
+          title="Copy code"
+        >
+          {isCopied ? (
+            <Check className="h-3.5 w-3.5 text-green-500" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </div>
+      <div className="overflow-x-auto text-sm">
+        <SyntaxHighlighter
+          style={vscDarkPlus}
+          language={language}
+          PreTag="div"
+          customStyle={{
+            margin: 0,
+            padding: '1rem',
+            background: 'transparent',
+          }}
+        >
+          {value}
+        </SyntaxHighlighter>
+      </div>
+    </div>
+  );
+}
 
 interface ChatMessageProps {
   message: Message;
@@ -145,16 +219,12 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
                   code({ inline, className, children, ...props }: any) {
                     const match = /language-(\w+)/.exec(className || '');
                     return !inline && match ? (
-                      <SyntaxHighlighter
-                        {...props}
-                        style={vscDarkPlus}
+                      <CodeBlock
                         language={match[1]}
-                        PreTag="div"
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
+                        value={String(children).replace(/\n$/, '')}
+                      />
                     ) : (
-                      <code className={className} {...props}>
+                      <code className={cn("bg-zinc-800/85 text-zinc-200 rounded px-1.5 py-0.5 font-mono text-[11px] before:hidden after:hidden", className)} {...props}>
                         {children}
                       </code>
                     );
