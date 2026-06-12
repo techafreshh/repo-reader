@@ -212,7 +212,12 @@ export function useChat() {
               case EventType.TOOL_CALL_END: {
                 const toolCallId = (event as any).toolCallId;
                 const tc = toolCalls.find((t) => t.id === toolCallId);
-                if (tc) tc.status = 'done';
+                if (tc) {
+                  tc.status = 'done';
+                  if (tc.name === 'initialize_repo') {
+                    setTreeVersion((v) => v + 1);
+                  }
+                }
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
@@ -257,7 +262,11 @@ export function useChat() {
               case EventType.RUN_FINISHED: {
                 setIsLoading(false);
                 subscriptionRef.current = null;
-                if (accumulatedContent.includes('Repository initialized') || accumulatedContent.includes('analyzed the codebase')) {
+                if (
+                  accumulatedContent.includes('Repository initialized') ||
+                  accumulatedContent.includes('analyzed the codebase') ||
+                  toolCalls.some((t) => t.name === 'initialize_repo')
+                ) {
                   setTreeVersion((v) => v + 1);
                 }
                 break;
