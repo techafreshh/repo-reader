@@ -137,7 +137,7 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
               'prose dark:prose-invert prose-sm max-w-none'
             )}
           >
-            {message.content ? (
+            {message.content && (
               <ReactMarkdown
                 components={{
                   code({ inline, className, children, ...props }: any) {
@@ -161,9 +161,12 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
               >
                 {message.content}
               </ReactMarkdown>
-            ) : isStreaming ? (
-              <LoadingDots />
-            ) : null}
+            )}
+            {isStreaming && (
+              <div className={cn("inline-block align-middle", message.content && "mt-2")}>
+                <LoadingDots />
+              </div>
+            )}
           </div>
         )}
 

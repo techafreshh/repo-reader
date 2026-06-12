@@ -251,7 +251,6 @@ export function useChat() {
                       ? {
                           ...m,
                           content: accumulatedContent,
-                          status: 'complete',
                           toolCalls: toolCalls.length > 0 ? [...toolCalls] : undefined,
                         }
                       : m
@@ -262,6 +261,17 @@ export function useChat() {
               case EventType.RUN_FINISHED: {
                 setIsLoading(false);
                 subscriptionRef.current = null;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessageId
+                      ? {
+                          ...m,
+                          status: 'complete',
+                          toolCalls: toolCalls.length > 0 ? [...toolCalls] : undefined,
+                        }
+                      : m
+                  )
+                );
                 if (
                   accumulatedContent.includes('Repository initialized') ||
                   accumulatedContent.includes('analyzed the codebase') ||
