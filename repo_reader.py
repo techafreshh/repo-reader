@@ -70,7 +70,7 @@ def clone_repo(url: str) -> Path:
 # --- Agent Definition ---
 
 agent = Agent(
-    'openrouter:inclusionai/ling-2.6-flash',
+    'openrouter:deepseek/deepseek-v4-flash',
     deps_type=StateDeps[AgentState],
     description="An AI agent that explores and explains code repositories.",
     system_prompt=(
