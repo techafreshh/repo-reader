@@ -118,7 +118,10 @@ def _get_config(ctx: RunContext[StateDeps[AgentState]]) -> RepoConfig:
 def list_files(ctx: RunContext[StateDeps[AgentState]], subdir: str = ".") -> str:
     """Recursively list files in a subdirectory, respecting .gitignore."""
     console.print(f"[bold yellow]Tool Called: list_files({subdir})...[/bold yellow]")
-    config = _get_config(ctx)
+    try:
+        config = _get_config(ctx)
+    except LookupError as e:
+        return f"Error: {e}"
     target_dir = config.root_path / subdir
     if not target_dir.exists() or not target_dir.is_dir():
         return f"Error: Directory '{subdir}' not found."
@@ -161,7 +164,10 @@ def is_binary(path: Path) -> bool:
 def read_file(ctx: RunContext[StateDeps[AgentState]], filepath: str) -> str:
     """Read the full content of a file."""
     console.print(f"[bold yellow]Tool Called: read_file({filepath})...[/bold yellow]")
-    config = _get_config(ctx)
+    try:
+        config = _get_config(ctx)
+    except LookupError as e:
+        return f"Error: {e}"
     path = config.root_path / filepath
     if not path.exists():
         return f"Error: File '{filepath}' not found."
@@ -181,7 +187,10 @@ def read_file(ctx: RunContext[StateDeps[AgentState]], filepath: str) -> str:
 def search_code(ctx: RunContext[StateDeps[AgentState]], pattern: str) -> str:
     """Search for a regex pattern or string across all non-ignored files."""
     console.print(f"[bold yellow]Tool Called: search_code({pattern})...[/bold yellow]")
-    config = _get_config(ctx)
+    try:
+        config = _get_config(ctx)
+    except LookupError as e:
+        return f"Error: {e}"
     results = []
     regex = re.compile(pattern, re.IGNORECASE)
     
@@ -214,7 +223,10 @@ def search_code(ctx: RunContext[StateDeps[AgentState]], pattern: str) -> str:
 def get_file_structure(ctx: RunContext[StateDeps[AgentState]], filepath: str) -> str:
     """Provide a high-level summary of a file (classes and functions) without the full body."""
     console.print(f"[bold yellow]Tool Called: get_file_structure({filepath})...[/bold yellow]")
-    config = _get_config(ctx)
+    try:
+        config = _get_config(ctx)
+    except LookupError as e:
+        return f"Error: {e}"
     path = config.root_path / filepath
     if not path.exists():
         return f"Error: File '{filepath}' not found."
@@ -245,7 +257,10 @@ def analyze_python_ast(ctx: RunContext[StateDeps[AgentState]], filepath: str) ->
     This is much more token-efficient than reading the full file and should be preferred
     for getting an overview of Python files."""
     console.print(f"[bold yellow]Tool Called: analyze_python_ast({filepath})...[/bold yellow]")
-    config = _get_config(ctx)
+    try:
+        config = _get_config(ctx)
+    except LookupError as e:
+        return f"Error: {e}"
     path = config.root_path / filepath
     if not path.exists():
         return f"Error: File '{filepath}' not found."

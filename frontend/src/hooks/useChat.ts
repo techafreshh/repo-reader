@@ -192,6 +192,15 @@ export function useChat() {
 
         const subscription = observable.subscribe({
           next: (event: BaseEvent) => {
+            // Debug: log all tool-call events
+            if (
+              event.type === EventType.TOOL_CALL_START ||
+              event.type === EventType.TOOL_CALL_ARGS ||
+              event.type === EventType.TOOL_CALL_END ||
+              event.type === EventType.TOOL_CALL_RESULT
+            ) {
+              console.log('[AG-UI Event]', event.type, JSON.stringify(event));
+            }
             switch (event.type) {
               case EventType.TOOL_CALL_START: {
                 const toolName = (event as any).toolCallName;
@@ -200,7 +209,7 @@ export function useChat() {
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
-                      ? { ...m, toolCalls: [...toolCalls] }
+                      ? { ...m, toolCalls: toolCalls.map(tc => ({ ...tc })) }
                       : m
                   )
                 );
@@ -209,14 +218,17 @@ export function useChat() {
               case EventType.TOOL_CALL_ARGS: {
                 const toolCallId = (event as any).toolCallId;
                 const delta = (event as any).delta;
-                const tc = toolCalls.find((t) => t.id === toolCallId);
-                if (tc) {
-                  tc.args = (tc.args || '') + (delta || '');
+                const index = toolCalls.findIndex((t) => t.id === toolCallId);
+                if (index !== -1) {
+                  toolCalls[index] = {
+                    ...toolCalls[index],
+                    args: (toolCalls[index].args || '') + (delta || ''),
+                  };
                 }
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
-                      ? { ...m, toolCalls: [...toolCalls] }
+                      ? { ...m, toolCalls: toolCalls.map(tc => ({ ...tc })) }
                       : m
                   )
                 );
@@ -225,14 +237,17 @@ export function useChat() {
               case EventType.TOOL_CALL_RESULT: {
                 const toolCallId = (event as any).toolCallId;
                 const content = (event as any).content;
-                const tc = toolCalls.find((t) => t.id === toolCallId);
-                if (tc) {
-                  tc.result = content;
+                const index = toolCalls.findIndex((t) => t.id === toolCallId);
+                if (index !== -1) {
+                  toolCalls[index] = {
+                    ...toolCalls[index],
+                    result: content,
+                  };
                 }
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
-                      ? { ...m, toolCalls: [...toolCalls] }
+                      ? { ...m, toolCalls: toolCalls.map(tc => ({ ...tc })) }
                       : m
                   )
                 );
@@ -240,17 +255,20 @@ export function useChat() {
               }
               case EventType.TOOL_CALL_END: {
                 const toolCallId = (event as any).toolCallId;
-                const tc = toolCalls.find((t) => t.id === toolCallId);
-                if (tc) {
-                  tc.status = 'done';
-                  if (tc.name === 'initialize_repo') {
+                const index = toolCalls.findIndex((t) => t.id === toolCallId);
+                if (index !== -1) {
+                  toolCalls[index] = {
+                    ...toolCalls[index],
+                    status: 'done',
+                  };
+                  if (toolCalls[index].name === 'initialize_repo') {
                     setTreeVersion((v) => v + 1);
                   }
                 }
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
-                      ? { ...m, toolCalls: [...toolCalls] }
+                      ? { ...m, toolCalls: toolCalls.map(tc => ({ ...tc })) }
                       : m
                   )
                 );
@@ -266,7 +284,7 @@ export function useChat() {
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === assistantMessageId
-                        ? { ...m, content: accumulatedContent }
+                        ? { ...m, content: accumulatedContent, toolCalls: toolCalls.length > 0 ? toolCalls.map(tc => ({ ...tc })) : undefined }
                         : m
                     )
                   );
@@ -280,7 +298,7 @@ export function useChat() {
                       ? {
                           ...m,
                           content: accumulatedContent,
-                          toolCalls: toolCalls.length > 0 ? [...toolCalls] : undefined,
+                          toolCalls: toolCalls.length > 0 ? toolCalls.map(tc => ({ ...tc })) : undefined,
                         }
                       : m
                   )
@@ -296,7 +314,7 @@ export function useChat() {
                       ? {
                           ...m,
                           status: 'complete',
-                          toolCalls: toolCalls.length > 0 ? [...toolCalls] : undefined,
+                          toolCalls: toolCalls.length > 0 ? toolCalls.map(tc => ({ ...tc })) : undefined,
                         }
                       : m
                   )
@@ -315,7 +333,7 @@ export function useChat() {
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
-                      ? { ...m, content: `Error: ${errorMsg}`, status: 'error' }
+                      ? { ...m, content: `Error: ${errorMsg}`, status: 'error', toolCalls: toolCalls.length > 0 ? toolCalls.map(tc => ({ ...tc })) : undefined }
                       : m
                   )
                 );
