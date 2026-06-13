@@ -8,19 +8,35 @@ import tempfile
 import shutil
 import mimetypes
 
+import logging
+from dotenv import load_dotenv
+
+# Load environment variables first
+load_dotenv()
+
+# Initialize Langfuse and Pydantic AI instrumentation if keys are configured
+LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")
+LANGFUSE_SECRET_KEY = os.getenv("LANGFUSE_SECRET_KEY")
+
+if LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY:
+    try:
+        from langfuse import get_client
+        # get_client registers OpenTelemetry span processor
+        langfuse = get_client()
+        from pydantic_ai.agent import Agent as OTelAgent
+        OTelAgent.instrument_all()
+    except Exception as e:
+        logging.warning(f"Failed to initialize Langfuse instrumentation: {e}")
+
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.ui import StateDeps
 from pydantic_ai.messages import ModelMessage
-from dotenv import load_dotenv
 from rich.console import Console
 from rich.markdown import Markdown
 import pathspec
 
 from sessions import sessions
-
-# Load environment variables
-load_dotenv()
 
 console = Console()
 
@@ -86,7 +102,8 @@ agent = Agent(
         "unrelated to the current repository or codebase, you must decline to answer, politely inform them "
         "that your capabilities are restricted to assisting with the loaded codebase, and ask them to ask "
         "a repository-related question."
-    )
+    ),
+    instrument=True
 )
 
 def _get_config(ctx: RunContext[StateDeps[AgentState]]) -> RepoConfig:
@@ -374,6 +391,14 @@ def main():
         if temp_dir_to_clean and temp_dir_to_clean.exists():
             console.print(f"\n[dim]Cleaning up temporary files...[/dim]")
             shutil.rmtree(temp_dir_to_clean)
+        
+        # Flush Langfuse client if instrumentation is configured
+        if os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"):
+            try:
+                from langfuse import get_client
+                get_client().flush()
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     main()

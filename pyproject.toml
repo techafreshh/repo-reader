@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.136.1",
+    "langfuse>=4.7.1",
     "pathspec>=1.1.0",
     "pydantic-ai-slim[ag-ui,openai]>=1.86.1",
     "python-dotenv>=1.2.2",

@@ -311,16 +311,30 @@ async def agui_endpoint(request: Request):
             detail="Rate limit exceeded. Maximum 20 messages per hour."
         )
 
-    return await AGUIAdapter.dispatch_request(
-        request, 
-        agent=agent,
-        deps=StateDeps(AgentState())
-    )
+    # Correlate OpenTelemetry/Langfuse traces with user session ID
+    from contextlib import nullcontext
+    context_manager = nullcontext()
+    
+    if session_id and os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"):
+        try:
+            from langfuse import propagate_attributes
+            context_manager = propagate_attributes(session_id=session_id)
+        except Exception as e:
+            print(f"[DEBUG] Failed to initialize propagate_attributes: {e}")
+
+    with context_manager:
+        return await AGUIAdapter.dispatch_request(
+            request, 
+            agent=agent,
+            deps=StateDeps(AgentState())
+        )
+
 
 
 if __name__ == "__main__":
     import uvicorn
     import sys
+    import socket
     
     port = 7643
     if "--port" in sys.argv:
@@ -329,5 +343,28 @@ if __name__ == "__main__":
             port = int(sys.argv[port_idx + 1])
         except (IndexError, ValueError):
             pass
+
+    host = "0.0.0.0"
+    if "--host" in sys.argv:
+        try:
+            host_idx = sys.argv.index("--host")
+            host = sys.argv[host_idx + 1]
+        except IndexError:
+            pass
+
+    # Check if host is bindable. If not, fallback to 127.0.0.1 (local loopback)
+    bindable = False
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((host, port))
+        bindable = True
+    except Exception as e:
+        print(f"[Warning] Failed to bind to {host}:{port} ({e})")
+        
+    if not bindable and host == "0.0.0.0":
+        print(f"[Info] Attempting to fallback to 127.0.0.1 for local execution...")
+        host = "127.0.0.1"
             
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host=host, port=port)
+
+

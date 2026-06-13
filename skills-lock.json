@@ -11,6 +11,12 @@
       "sourceType": "github",
       "skillPath": "SKILL.md",
       "computedHash": "ea266ce95f3b5a080794b757121086247955708e7effe73461ed33ad29301643"
+    },
+    "langfuse": {
+      "source": "langfuse/skills",
+      "sourceType": "github",
+      "skillPath": "skills/langfuse/SKILL.md",
+      "computedHash": "2a83575ed51ce9fd81b661fc0cc2b150e8b8fbbd64c43fda2c48a0314bc93c52"
     }
   }
 }
