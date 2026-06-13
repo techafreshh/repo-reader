@@ -195,6 +195,42 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
                       </span>
                     </span>
                   </button>
+                  {expandedTools.has(tc.id) && (
+                    <div className="border-t border-border/40 bg-muted/20 px-3.5 py-2.5 text-xs font-mono space-y-3.5 overflow-x-auto">
+                      {tc.args && (
+                        <div>
+                          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                            Parameters
+                          </div>
+                          <pre className="p-2 rounded-lg bg-zinc-950/80 border border-border/40 text-zinc-300 leading-normal break-all whitespace-pre-wrap">
+                            {(() => {
+                              try {
+                                return JSON.stringify(JSON.parse(tc.args), null, 2);
+                              } catch {
+                                return tc.args;
+                              }
+                            })()}
+                          </pre>
+                        </div>
+                      )}
+                      {tc.result && (
+                        <div>
+                          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                            Response
+                          </div>
+                          <pre className="p-2 rounded-lg bg-zinc-950/80 border border-border/40 text-zinc-300 leading-normal break-all whitespace-pre-wrap">
+                            {(() => {
+                              try {
+                                return JSON.stringify(JSON.parse(tc.result), null, 2);
+                              } catch {
+                                return tc.result;
+                              }
+                            })()}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
 

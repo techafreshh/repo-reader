@@ -8,6 +8,8 @@ export interface ToolCall {
   id: string;
   name: string;
   status: ToolCallStatus;
+  args?: string;
+  result?: string;
 }
 
 export interface Message {

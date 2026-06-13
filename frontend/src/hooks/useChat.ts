@@ -207,6 +207,35 @@ export function useChat() {
                 break;
               }
               case EventType.TOOL_CALL_ARGS: {
+                const toolCallId = (event as any).toolCallId;
+                const delta = (event as any).delta;
+                const tc = toolCalls.find((t) => t.id === toolCallId);
+                if (tc) {
+                  tc.args = (tc.args || '') + (delta || '');
+                }
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessageId
+                      ? { ...m, toolCalls: [...toolCalls] }
+                      : m
+                  )
+                );
+                break;
+              }
+              case EventType.TOOL_CALL_RESULT: {
+                const toolCallId = (event as any).toolCallId;
+                const content = (event as any).content;
+                const tc = toolCalls.find((t) => t.id === toolCallId);
+                if (tc) {
+                  tc.result = content;
+                }
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessageId
+                      ? { ...m, toolCalls: [...toolCalls] }
+                      : m
+                  )
+                );
                 break;
               }
               case EventType.TOOL_CALL_END: {
