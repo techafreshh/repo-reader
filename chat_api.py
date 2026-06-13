@@ -17,10 +17,13 @@ from repo_reader import (
     StateDeps,
     get_gitignore_spec, 
     clone_repo, 
-    RunContext
+    RunContext,
+    is_ignored
 )
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from sessions import sessions
+from rate_limiter import RateLimiter
+
 
 app = FastAPI(title="Repo Reader API")
 
@@ -92,8 +95,45 @@ def get_session(session_id: str):
 
 SessionDep = Annotated[Dict, Depends(get_session)]
 
+def verify_repo_limits(root_path: Path, gitignore_spec: Optional[Any] = None) -> None:
+    """Verify that the repository does not exceed size and file count limits."""
+    max_files = int(os.getenv("MAX_REPO_FILES", "100"))
+    max_size_mb = float(os.getenv("MAX_REPO_SIZE_MB", "50.0"))
+    max_size_bytes = int(max_size_mb * 1024 * 1024)
+
+    file_count = 0
+    total_size = 0
+
+    for root, dirs, files in os.walk(root_path):
+        if gitignore_spec:
+            dirs[:] = [d for d in dirs if not is_ignored(Path(root) / d, root_path, gitignore_spec)]
+
+        for file in files:
+            path = Path(root) / file
+            if gitignore_spec and is_ignored(path, root_path, gitignore_spec):
+                continue
+            
+            file_count += 1
+            if file_count > max_files:
+                raise ValueError(
+                    f"Repository exceeds the limit of {max_files} files. "
+                    "Please choose a smaller repository."
+                )
+
+            try:
+                total_size += path.stat().st_size
+                if total_size > max_size_bytes:
+                    raise ValueError(
+                        f"Repository exceeds the limit of {max_size_mb}MB total size. "
+                        "Please choose a smaller repository."
+                    )
+            except OSError:
+                pass
+
 def _initialize_session_logic(target: str, session_id: str):
     """Internal helper to setup a session from a target path/URL."""
+    root = None
+    is_temp = False
     try:
         if target.startswith(("http://", "https://", "git@")):
             root = clone_repo(target)
@@ -105,9 +145,12 @@ def _initialize_session_logic(target: str, session_id: str):
         if not root.exists() or not root.is_dir():
             raise Exception(f"Invalid repository path: {target}")
 
+        gitignore_spec = get_gitignore_spec(root)
+        verify_repo_limits(root, gitignore_spec)
+
         config = RepoConfig(
             root_path=root,
-            gitignore_spec=get_gitignore_spec(root)
+            gitignore_spec=gitignore_spec
         )
 
         sessions[session_id] = {
@@ -118,7 +161,13 @@ def _initialize_session_logic(target: str, session_id: str):
         }
         return root
     except Exception as e:
+        if is_temp and root and root.exists():
+            try:
+                shutil.rmtree(root)
+            except Exception:
+                pass
         raise e
+
 
 # --- AG-UI Tool: initialize_repo ---
 
@@ -133,11 +182,26 @@ async def initialize_repo(ctx: RunContext[StateDeps[AgentState]], repo_target: s
     except Exception as e:
         return f"Failed to initialize repository: {str(e)}"
 
+# --- Rate Limiters ---
+rate_limiter = RateLimiter(default_limit=20, default_window_seconds=3600)
+repo_init_limiter = RateLimiter(default_limit=10, default_window_seconds=3600)
+
 # --- Endpoints ---
 
 @app.post("/initialize", response_model=InitializeResponse)
-async def initialize_repo_endpoint(request_body: Optional[InitializeRequest] = None, repo_target: Optional[str] = None):
+async def initialize_repo_endpoint(
+    request: Request,
+    request_body: Optional[InitializeRequest] = None, 
+    repo_target: Optional[str] = None
+):
     """Initialize a repo. Accepts target from body OR query string."""
+    client_ip = request.client.host if request.client else "unknown"
+    if repo_init_limiter.is_rate_limited(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Maximum 10 repository initializations per hour."
+        )
+
     target = repo_target or (request_body.repo_target if request_body else None)
     
     if not target:
@@ -152,6 +216,8 @@ async def initialize_repo_endpoint(request_body: Optional[InitializeRequest] = N
             session_id=session_id,
             message=f"Repository '{friendly_name}' initialized successfully."
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -213,11 +279,44 @@ async def close_session(session_id: str):
 
 @app.post("/agui")
 async def agui_endpoint(request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Read body safely to check rate limits
+    body_json = {}
+    try:
+        body = await request.body()
+        async def receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+        request._receive = receive
+        if body:
+            import json
+            body_json = json.loads(body)
+    except Exception as e:
+        print(f"[DEBUG] Error reading request body for rate limiting: {e}")
+
+    # Extract session ID (threadId)
+    session_id = body_json.get("threadId") or body_json.get("state", {}).get("session_id")
+
+    # Check client IP rate limit
+    if rate_limiter.is_rate_limited(client_ip):
+        raise HTTPException(
+            status_code=429, 
+            detail="Rate limit exceeded. Maximum 20 messages per hour."
+        )
+
+    # Check Session ID rate limit (if present)
+    if session_id and rate_limiter.is_rate_limited(session_id):
+        raise HTTPException(
+            status_code=429, 
+            detail="Rate limit exceeded. Maximum 20 messages per hour."
+        )
+
     return await AGUIAdapter.dispatch_request(
         request, 
         agent=agent,
         deps=StateDeps(AgentState())
     )
+
 
 if __name__ == "__main__":
     import uvicorn
