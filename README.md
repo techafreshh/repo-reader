@@ -17,7 +17,7 @@ A deep-analysis agent that can navigate repositories, search for logic, and expl
 
 ### 2. FastAPI Chat API (`chat_api.py`)
 Expose the Repo Reader as a production-ready REST API.
-*   **Session-Based Chat**: Maintains conversation history for continuous context.
+*   **Session-Based Chat**: Maintains conversation history for continuous context, persisted in SQLite (`SESSION_DB_PATH`) so sessions survive restarts.
 *   **Async/Await**: High-performance asynchronous execution.
 *   **Auto-Cleanup**: Temporary cloned repositories are wiped when the session is closed.
 
@@ -40,6 +40,23 @@ This project uses `uv` for lightning-fast dependency management.
     ```env
     OPENROUTER_API_KEY=your_key_here
     ```
+
+### Configuration
+
+All settings are read from environment variables (see `.env.example`):
+
+| Variable | Default | Description |
+|---|---|---|
+| `OPENROUTER_API_KEY` | — | API key for the model provider. |
+| `MODEL_NAME` | `openrouter:deepseek/deepseek-v4-flash` | Provider-prefixed Pydantic AI model string for the repo reader agent. |
+| `SESSION_DB_PATH` | `sessions.db` | SQLite file used to persist sessions across restarts. |
+| `SESSION_ORPHAN_MAX_AGE_SECONDS` | `3600` | Age after which untracked temp repo clones are cleaned up on startup. |
+| `CORS_ALLOW_ORIGINS` | `*` | Comma-separated allowed origins. When `*`, credentials are disabled. |
+| `MAX_MESSAGES_PER_HOUR` | `20` | Per-IP/per-session chat rate limit. |
+| `RATE_LIMIT_WINDOW_SECONDS` | `3600` | Rate limit window. |
+| `MAX_REPO_FILES` | `100` | Maximum files in an analyzed repository. |
+| `MAX_REPO_SIZE_MB` | `50.0` | Maximum total repository size. |
+| `LANGFUSE_*` | — | Optional Langfuse observability keys. |
 
 ---
 

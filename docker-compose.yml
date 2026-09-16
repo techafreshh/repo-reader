@@ -7,6 +7,10 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - SESSION_DB_PATH=/app/data/sessions.db
+    volumes:
+      - repo-reader-data:/app/data
     # No ports exposed here! The backend is completely hidden from the internet.
     # It is only accessible to the frontend container on the internal Docker network.
 
@@ -24,3 +28,6 @@ services:
     #   - "80:80"
     depends_on:
       - backend
+
+volumes:
+  repo-reader-data:

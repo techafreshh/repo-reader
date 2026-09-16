@@ -12,6 +12,12 @@ wheels/
 .agents/
 examples/
 
+# Local session database
+sessions.db
+*.db
+*.db-journal
+*.db-wal
+
 # Logs
 frontend/logs
 frontend/*.log
@@ -38,4 +44,5 @@ frontend/.idea
 *.sw?
 
 # docker compose local testing files
+docker-compose.override.yml
 frontend/docker-compose.override.yml

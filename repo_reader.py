@@ -1,12 +1,11 @@
 import os
 import re
 import ast
-from pathlib import Path
-from typing import List, Optional, Any
-import subprocess
-import tempfile
+import uuid
 import shutil
 import mimetypes
+from pathlib import Path
+from typing import List, Optional
 
 import logging
 from dotenv import load_dotenv
@@ -28,65 +27,36 @@ if LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY:
     except Exception as e:
         logging.warning(f"Failed to initialize Langfuse instrumentation: {e}")
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.ui import StateDeps
 from pydantic_ai.messages import ModelMessage
 from rich.console import Console
 from rich.markdown import Markdown
-import pathspec
 
-from sessions import sessions
+from repo_config import (
+    RepoConfig,
+    clone_repo,
+    get_friendly_name,
+    get_gitignore_spec,
+    is_ignored,
+    verify_repo_limits,
+)
+from session_store import store
 
 console = Console()
 
-# --- Models & Configuration ---
+MODEL_NAME = os.getenv("MODEL_NAME", "openrouter:deepseek/deepseek-v4-flash")
 
-class RepoConfig(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-    root_path: Path
-    gitignore_spec: Optional[pathspec.PathSpec] = None
+# --- Models & Configuration ---
 
 class AgentState(BaseModel):
     session_id: str = ""
 
-# --- Utilities ---
-
-def get_gitignore_spec(root_path: Path) -> pathspec.PathSpec:
-    gitignore_path = root_path / ".gitignore"
-    patterns = [".git/", ".venv/", "__pycache__/", "*.pyc"]
-    if gitignore_path.exists():
-        with open(gitignore_path, "r") as f:
-            patterns.extend(f.readlines())
-    return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
-
-def is_ignored(path: Path, root_path: Path, spec: pathspec.PathSpec) -> bool:
-    try:
-        relative_path = path.relative_to(root_path)
-        # Convert to posix style (forward slashes)
-        posix_path = relative_path.as_posix()
-        # If it's a directory, append a slash to match directory patterns (like .venv/)
-        if path.is_dir() and not posix_path.endswith('/'):
-            posix_path += '/'
-        return spec.match_file(posix_path)
-    except ValueError:
-        return False
-
-def clone_repo(url: str) -> Path:
-    """Clone a GitHub repository to a temporary directory."""
-    temp_dir = Path(tempfile.mkdtemp(prefix="repo_reader_"))
-    try:
-        subprocess.run(["git", "clone", "--depth", "1", url, str(temp_dir)], check=True, capture_output=True)
-        return temp_dir
-    except subprocess.CalledProcessError as e:
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir)
-        raise Exception(f"Git clone failed: {e.stderr.decode()}")
-
 # --- Agent Definition ---
 
 agent = Agent(
-    'openrouter:deepseek/deepseek-v4-flash',
+    MODEL_NAME,
     deps_type=StateDeps[AgentState],
     description="An AI agent that explores and explains code repositories.",
     system_prompt=(
@@ -107,12 +77,59 @@ agent = Agent(
 )
 
 def _get_config(ctx: RunContext[StateDeps[AgentState]]) -> RepoConfig:
-    session = sessions.get(ctx.deps.state.session_id)
+    session = store.get(ctx.deps.state.session_id)
     if not session:
         raise LookupError("No repository initialized. Please provide a GitHub URL or local path.")
     return session["config"]
 
+# --- Session Initialization ---
+
+def initialize_session_logic(target: str, session_id: str) -> Path:
+    """Clone or resolve a repository target and persist a session for it."""
+    root = None
+    is_temp = False
+    try:
+        if target.startswith(("http://", "https://", "git@")):
+            root = clone_repo(target)
+            is_temp = True
+        else:
+            root = Path(target).resolve()
+            is_temp = False
+
+        if not root.exists() or not root.is_dir():
+            raise Exception(f"Invalid repository path: {target}")
+
+        gitignore_spec = get_gitignore_spec(root)
+        verify_repo_limits(root, gitignore_spec)
+
+        store.create(
+            session_id,
+            root_path=root,
+            is_temp=is_temp,
+            temp_path=root if is_temp else None,
+            history=[],
+        )
+        return root
+    except Exception as e:
+        if is_temp and root and root.exists():
+            try:
+                shutil.rmtree(root)
+            except Exception:
+                pass
+        raise e
+
 # --- Tools ---
+
+@agent.tool
+async def initialize_repo(ctx: RunContext[StateDeps[AgentState]], repo_target: str) -> str:
+    """Initialize a repository from a URL or local path when no session exists yet."""
+    session_id = ctx.deps.state.session_id
+    try:
+        initialize_session_logic(repo_target, session_id)
+        friendly_name = get_friendly_name(repo_target)
+        return f"Repository '{friendly_name}' initialized. You can now explore the codebase."
+    except Exception as e:
+        return f"Failed to initialize repository: {str(e)}"
 
 @agent.tool
 def list_files(ctx: RunContext[StateDeps[AgentState]], subdir: str = ".") -> str:
@@ -358,30 +375,21 @@ def main():
     else:
         target = input("Enter a local path OR a GitHub URL: ").strip()
     
+    session_id = f"cli-{uuid.uuid4()}"
     temp_dir_to_clean = None
 
     try:
-        if target.startswith(("http://", "https://")):
-            with console.status("[bold yellow]Cloning repository...[/bold yellow]"):
-                root = clone_repo(target)
-                temp_dir_to_clean = root
-        else:
-            root = Path(target).resolve() if target else Path.cwd()
-
-        if not root.exists() or not root.is_dir():
-            console.print(f"[bold red]Error:[/bold red] Path '{root}' does not exist or is not a directory.")
-            return
-
-        config = RepoConfig(
-            root_path=root,
-            gitignore_spec=get_gitignore_spec(root)
-        )
+        initialize_session_logic(target or ".", session_id)
+        session = store.get(session_id)
+        root = session["config"].root_path
+        temp_dir_to_clean = session["temp_path"]
 
         console.print(f"\n[bold blue]Repo Reader Active[/bold blue]")
         console.print(f"Target: [cyan]{target if target else 'Local'}[/cyan]")
         console.print(f"Analysis Path: [dim]{root}[/dim]")
         
         message_history: List[ModelMessage] = []
+        deps = StateDeps(AgentState(session_id=session_id))
 
         while True:
             try:
@@ -390,7 +398,7 @@ def main():
                 if not prompt.strip(): continue
 
                 with console.status("[bold green]Analyzing...[/bold green]"):
-                    result = agent.run_sync(prompt, deps=config, message_history=message_history)
+                    result = agent.run_sync(prompt, deps=deps, message_history=message_history)
                 
                 message_history = result.new_messages()
                 console.print("\n[bold magenta]Repo Intelligence:[/bold magenta]")
@@ -402,8 +410,12 @@ def main():
             except Exception as e:
                 console.print(f"[bold red]Error:[/bold red] {e}")
 
+    except Exception as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+
     finally:
-        if temp_dir_to_clean and temp_dir_to_clean.exists():
+        store.pop(session_id)
+        if temp_dir_to_clean and Path(temp_dir_to_clean).exists():
             console.print(f"\n[dim]Cleaning up temporary files...[/dim]")
             shutil.rmtree(temp_dir_to_clean)
         
