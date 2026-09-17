@@ -12,15 +12,17 @@ export interface TreeNode {
 interface FileTreeProps {
   tree: TreeNode[];
   onFileClick?: (path: string) => void;
+  activeFilePath?: string | null;
 }
 
 interface TreeItemProps {
   node: TreeNode;
   depth: number;
   onFileClick?: (path: string) => void;
+  activeFilePath?: string | null;
 }
 
-function TreeItem({ node, depth, onFileClick }: TreeItemProps) {
+function TreeItem({ node, depth, onFileClick, activeFilePath }: TreeItemProps) {
   const [isOpen, setIsOpen] = useState(depth < 1);
   const isDir = node.type === 'directory';
 
@@ -32,14 +34,18 @@ function TreeItem({ node, depth, onFileClick }: TreeItemProps) {
     }
   };
 
+  const isActive = !isDir && activeFilePath === node.path;
+
   return (
     <div>
       <button
         onClick={handleClick}
         className={cn(
           'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] font-mono transition-colors',
-          'hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
-          isDir ? 'text-sidebar-foreground' : 'text-muted-foreground',
+          isActive
+            ? 'bg-primary/20 text-primary font-medium'
+            : 'hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
+          isDir ? 'text-sidebar-foreground' : isActive ? 'text-primary' : 'text-muted-foreground',
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
       >
@@ -59,7 +65,7 @@ function TreeItem({ node, depth, onFileClick }: TreeItemProps) {
         ) : (
           <>
             <span className="w-3 flex-shrink-0" />
-            <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+            <FileText className={cn("h-3.5 w-3.5 flex-shrink-0", isActive ? "text-primary" : "text-muted-foreground")} />
           </>
         )}
         <span className="truncate">{node.name}</span>
@@ -73,6 +79,7 @@ function TreeItem({ node, depth, onFileClick }: TreeItemProps) {
               node={child}
               depth={depth + 1}
               onFileClick={onFileClick}
+              activeFilePath={activeFilePath}
             />
           ))}
         </div>
@@ -81,7 +88,7 @@ function TreeItem({ node, depth, onFileClick }: TreeItemProps) {
   );
 }
 
-export function FileTree({ tree, onFileClick }: FileTreeProps) {
+export function FileTree({ tree, onFileClick, activeFilePath }: FileTreeProps) {
   if (tree.length === 0) {
     return (
       <div className="px-3 py-2 text-[10px] text-muted-foreground font-mono italic">
@@ -93,7 +100,13 @@ export function FileTree({ tree, onFileClick }: FileTreeProps) {
   return (
     <div className="space-y-0.5">
       {tree.map((node) => (
-        <TreeItem key={node.path} node={node} depth={0} onFileClick={onFileClick} />
+        <TreeItem
+          key={node.path}
+          node={node}
+          depth={0}
+          onFileClick={onFileClick}
+          activeFilePath={activeFilePath}
+        />
       ))}
     </div>
   );

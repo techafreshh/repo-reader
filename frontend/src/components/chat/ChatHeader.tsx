@@ -1,4 +1,4 @@
-import { Zap, Settings, Trash2, PanelLeft, PanelLeftClose, Sun, Moon, Palette } from 'lucide-react';
+import { Zap, Settings, Trash2, PanelLeft, PanelLeftClose, Sun, Moon, Palette, Code, PanelRight, PanelRightClose } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -23,6 +23,9 @@ interface ChatHeaderProps {
   isExternal?: boolean;
   appName: string;
   appLogoUrl?: string;
+  openTabsCount?: number;
+  isViewerOpen?: boolean;
+  onToggleViewer?: () => void;
 }
 
 export function ChatHeader({
@@ -39,6 +42,9 @@ export function ChatHeader({
   isExternal,
   appName,
   appLogoUrl,
+  openTabsCount,
+  isViewerOpen,
+  onToggleViewer,
 }: ChatHeaderProps) {
   return (
     <header className="flex h-14 items-center justify-between bg-background/80 backdrop-blur-sm px-4">
@@ -165,6 +171,37 @@ export function ChatHeader({
             {theme === 'deep-dark' ? 'Use Warm Cream Canvas' : 'Use Warm Navy Surface'}
           </TooltipContent>
         </Tooltip>
+
+        {openTabsCount !== undefined && openTabsCount > 0 && onToggleViewer && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onToggleViewer}
+                className={cn(
+                  'h-8 w-8 relative',
+                  isViewerOpen
+                    ? 'text-primary hover:text-primary bg-primary/10'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {isViewerOpen ? (
+                  <PanelRightClose className="h-4 w-4" />
+                ) : (
+                  <PanelRight className="h-4 w-4" />
+                )}
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-mono font-bold text-white">
+                  {openTabsCount}
+                </span>
+                <span className="sr-only">Toggle code viewer</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {isViewerOpen ? 'Hide code viewer' : `Show code viewer (${openTabsCount} tab${openTabsCount > 1 ? 's' : ''})`}
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
     </header>
   );

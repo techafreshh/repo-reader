@@ -18,6 +18,8 @@ from repo_reader import (
     AgentState,
     StateDeps,
     initialize_session_logic,
+    _resolve_safe_path,
+    is_binary,
 )
 from repo_config import get_friendly_name, is_ignored
 from sessions import sessions
@@ -95,6 +97,7 @@ SessionDep = Annotated[Dict, Depends(get_session)]
 # --- Rate Limiters ---
 rate_limiter = RateLimiter(default_limit=20, default_window_seconds=3600, env_limit_var="MAX_MESSAGES_PER_HOUR")
 repo_init_limiter = RateLimiter(default_limit=10, default_window_seconds=3600, env_limit_var="MAX_REPO_INITS_PER_HOUR")
+file_view_limiter = RateLimiter(default_limit=60, default_window_seconds=3600, env_limit_var="MAX_FILE_VIEWS_PER_HOUR")
 
 # --- Endpoints ---
 
@@ -171,6 +174,68 @@ async def get_file_tree(session_id: str):
 
     tree = build_tree(root)
     return {"tree": tree}
+
+@app.get("/file/{session_id}")
+async def get_file_content(session_id: str, request: Request, path: str):
+    """Return the raw text content or metadata of a file in the loaded repository."""
+    client_ip = request.client.host if request.client else "unknown"
+    if file_view_limiter.is_rate_limited(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Maximum {file_view_limiter.limit} file views per hour."
+        )
+
+    if not path or not path.strip():
+        raise HTTPException(status_code=400, detail="Missing required 'path' query parameter")
+
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    config = session["config"]
+    root = config.root_path
+    spec = config.gitignore_spec
+
+    safe_path = _resolve_safe_path(root, path)
+    if not safe_path or not safe_path.exists():
+        raise HTTPException(status_code=404, detail=f"File not found or outside repository: {path}")
+
+    if safe_path.is_dir():
+        raise HTTPException(status_code=400, detail=f"'{path}' is a directory, not a file")
+
+    if is_ignored(safe_path, root, spec):
+        raise HTTPException(status_code=403, detail=f"File '{path}' is ignored by .gitignore")
+
+    rel_path = str(safe_path.relative_to(root)).replace("\\", "/")
+    file_size = safe_path.stat().st_size
+
+    if is_binary(safe_path):
+        return {
+            "path": rel_path,
+            "name": safe_path.name,
+            "content": None,
+            "binary": True,
+            "size": file_size,
+        }
+
+    max_file_size = int(float(os.getenv("MAX_VIEW_FILE_MB", "1.0")) * 1024 * 1024)
+    if file_size > max_file_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File exceeds maximum display size of {os.getenv('MAX_VIEW_FILE_MB', '1.0')}MB",
+        )
+
+    try:
+        content = safe_path.read_text(encoding="utf-8", errors="replace")
+        return {
+            "path": rel_path,
+            "name": safe_path.name,
+            "content": content,
+            "binary": False,
+            "size": file_size,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading file: {e}")
 
 @app.delete("/session/{session_id}")
 async def close_session(session_id: str):

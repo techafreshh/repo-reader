@@ -70,6 +70,9 @@ The agent exposes read-only tools:
 - `POST /agui` implements the AG-UI protocol over SSE and streams text and
   tool-call events to the client.
 - `GET /tree/{session_id}` returns a nested JSON file tree for the sidebar.
+- `GET /file/{session_id}?path=...` returns a single file's content (or binary
+  metadata) for the side-pane code viewer; traversal, ignored, and oversized
+  files are rejected, and the endpoint is rate-limited per IP.
 - Model selection is configurable via `MODEL_NAME`
   (provider-prefixed Pydantic AI string).
 
