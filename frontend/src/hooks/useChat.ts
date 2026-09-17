@@ -3,6 +3,14 @@ import { HttpAgent, EventType } from '@ag-ui/client';
 import type { BaseEvent } from '@ag-ui/core';
 import type { Message, ToolCall, WebhookConfig } from '@/types/chat';
 
+interface AgUiEventPayload {
+  toolCallName?: string;
+  toolCallId?: string;
+  delta?: string;
+  content?: string;
+  message?: string;
+}
+
 const WEBHOOK_STORAGE_KEY = 'voltchat-api-url';
 const MESSAGES_STORAGE_KEY = 'voltchat-messages';
 const SESSION_ID_STORAGE_KEY = 'voltchat-session-id';
@@ -66,7 +74,7 @@ export function useChat() {
     if (savedStreaming !== null) {
       setIsStreamingEnabled(JSON.parse(savedStreaming));
     }
-  }, []);
+  }, [ENV_API_BASE_URL]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -110,6 +118,42 @@ export function useChat() {
     setMessages(prev => prev.map(m => m.status === 'streaming' ? { ...m, status: 'complete' } : m));
     setIsLoading(false);
   }, []);
+
+  const simulateStreaming = useCallback(
+    (messageId: string, fullContent: string) => {
+      let currentIndex = 0;
+      const chunkSize = 2 + Math.floor(Math.random() * 3);
+      const baseDelay = 20;
+
+      const streamInterval = setInterval(() => {
+        currentIndex += chunkSize;
+
+        if (currentIndex >= fullContent.length) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId
+                ? { ...m, content: fullContent, status: 'complete' }
+                : m
+            )
+          );
+          clearInterval(streamInterval);
+          setIsLoading(false);
+          subscriptionRef.current = null;
+        } else {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId
+                ? { ...m, content: fullContent.slice(0, currentIndex) }
+                : m
+            )
+          );
+        }
+      }, baseDelay + Math.random() * 15);
+
+      subscriptionRef.current = { unsubscribe: () => clearInterval(streamInterval) };
+    },
+    []
+  );
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -201,10 +245,11 @@ export function useChat() {
             ) {
               console.log('[AG-UI Event]', event.type, JSON.stringify(event));
             }
+            const payload = event as unknown as AgUiEventPayload;
             switch (event.type) {
               case EventType.TOOL_CALL_START: {
-                const toolName = (event as any).toolCallName;
-                const toolCallId = (event as any).toolCallId;
+                const toolName = payload.toolCallName || '';
+                const toolCallId = payload.toolCallId || '';
                 toolCalls.push({ id: toolCallId, name: toolName, status: 'running' });
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -216,13 +261,13 @@ export function useChat() {
                 break;
               }
               case EventType.TOOL_CALL_ARGS: {
-                const toolCallId = (event as any).toolCallId;
-                const delta = (event as any).delta;
+                const toolCallId = payload.toolCallId || '';
+                const delta = payload.delta || '';
                 const index = toolCalls.findIndex((t) => t.id === toolCallId);
                 if (index !== -1) {
                   toolCalls[index] = {
                     ...toolCalls[index],
-                    args: (toolCalls[index].args || '') + (delta || ''),
+                    args: (toolCalls[index].args || '') + delta,
                   };
                 }
                 setMessages((prev) =>
@@ -235,8 +280,8 @@ export function useChat() {
                 break;
               }
               case EventType.TOOL_CALL_RESULT: {
-                const toolCallId = (event as any).toolCallId;
-                const content = (event as any).content;
+                const toolCallId = payload.toolCallId || '';
+                const content = payload.content;
                 const index = toolCalls.findIndex((t) => t.id === toolCallId);
                 if (index !== -1) {
                   toolCalls[index] = {
@@ -254,7 +299,7 @@ export function useChat() {
                 break;
               }
               case EventType.TOOL_CALL_END: {
-                const toolCallId = (event as any).toolCallId;
+                const toolCallId = payload.toolCallId || '';
                 const index = toolCalls.findIndex((t) => t.id === toolCallId);
                 if (index !== -1) {
                   toolCalls[index] = {
@@ -278,7 +323,7 @@ export function useChat() {
                 break;
               }
               case EventType.TEXT_MESSAGE_CONTENT: {
-                const delta = (event as any).delta;
+                const delta = payload.delta;
                 if (delta) {
                   accumulatedContent += delta;
                   setMessages((prev) =>
@@ -329,7 +374,7 @@ export function useChat() {
                 break;
               }
               case EventType.RUN_ERROR: {
-                const errorMsg = (event as any).message || 'Unknown error';
+                const errorMsg = payload.message || 'Unknown error';
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
@@ -381,43 +426,7 @@ export function useChat() {
         setIsLoading(false);
       }
     },
-    [webhookConfig.url, isLoading, sessionId, isStreamingEnabled, messages]
-  );
-
-  const simulateStreaming = useCallback(
-    (messageId: string, fullContent: string) => {
-      let currentIndex = 0;
-      const chunkSize = 2 + Math.floor(Math.random() * 3);
-      const baseDelay = 20;
-
-      const streamInterval = setInterval(() => {
-        currentIndex += chunkSize;
-
-        if (currentIndex >= fullContent.length) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === messageId
-                ? { ...m, content: fullContent, status: 'complete' }
-                : m
-            )
-          );
-          clearInterval(streamInterval);
-          setIsLoading(false);
-          subscriptionRef.current = null;
-        } else {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === messageId
-                ? { ...m, content: fullContent.slice(0, currentIndex) }
-                : m
-            )
-          );
-        }
-      }, baseDelay + Math.random() * 15);
-
-      subscriptionRef.current = { unsubscribe: () => clearInterval(streamInterval) };
-    },
-    []
+    [webhookConfig.url, isLoading, sessionId, isStreamingEnabled, messages, simulateStreaming]
   );
 
   const retryLastMessage = useCallback(() => {

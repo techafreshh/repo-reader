@@ -1,71 +1,78 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
+import asyncio
+from contextlib import asynccontextmanager
+import json
+import os
+from pathlib import Path
+import shutil
+from typing import Dict, Optional, Annotated
+import uuid
+
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, AliasGenerator
-from pydantic.alias_generators import to_camel
-from typing import List, Dict, Optional, Annotated, Any
-import uuid
-import shutil
-from pathlib import Path
-import os
+from pydantic import BaseModel
 
 from repo_reader import (
-    agent, 
-    RepoConfig, 
+    agent,
     AgentState,
     StateDeps,
-    get_gitignore_spec, 
-    clone_repo, 
-    RunContext,
-    is_ignored
+    initialize_session_logic,
 )
-from pydantic_ai.ui.ag_ui import AGUIAdapter
+from repo_config import get_friendly_name, is_ignored
 from sessions import sessions
+from pydantic_ai.ui.ag_ui import AGUIAdapter
 from rate_limiter import RateLimiter
 
 
-app = FastAPI(title="Repo Reader API")
+async def _periodic_cleanup(interval_seconds: int = 3600):
+    """Periodically prune stale orphaned temporary repository clones."""
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            await asyncio.to_thread(sessions.cleanup_orphans)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[Warning] Background orphan cleanup failed: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    sessions.cleanup_orphans()
+    cleanup_task = asyncio.create_task(_periodic_cleanup(3600))
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="Repo Reader API", lifespan=lifespan)
 
 # --- CORS Middleware ---
+# Comma-separated list of allowed origins. Defaults to "*" for local dev.
+# Credentials are only allowed when explicit origins are configured, since
+# browsers reject the wildcard-with-credentials combination.
+cors_origins = [o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "*").split(",") if o.strip()]
+allow_all_origins = "*" in cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["*"] if allow_all_origins else cors_origins,
+    allow_credentials=not allow_all_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    body = await request.body()
-    print(f"\n[DEBUG] !!! Validation Error !!!")
-    print(f"Method: {request.method}")
-    print(f"URL: {request.url}")
-    print(f"Headers: {dict(request.headers)}")
-    print(f"Query Params: {dict(request.query_params)}")
-    print(f"Raw Body: '{body.decode()}'")
-    print(f"Errors: {exc.errors()}\n")
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors(), "body": body.decode(), "message": "Backend received an empty or invalid body."},
+        content={"detail": exc.errors(), "message": "Backend received an empty or invalid body."},
     )
-
-def get_friendly_name(target: str) -> str:
-    """Get a user-friendly name from the repository target URL or path."""
-    if target.startswith(("http://", "https://", "git@", "github.com")):
-        parts = target.rstrip("/").split("/")
-        if parts:
-            name = parts[-1]
-            if name.endswith(".git"):
-                name = name[:-4]
-            return name
-    else:
-        try:
-            return Path(target).name or target
-        except Exception:
-            return target
-    return target
 
 
 # --- Schemas ---
@@ -77,114 +84,17 @@ class InitializeResponse(BaseModel):
     session_id: str
     message: str
 
-class ChatRequest(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=AliasGenerator(
-            validation_alias=to_camel,
-        ),
-        populate_by_name=True,
-    )
-    session_id: str
-    message: str
-    history: Optional[List[Any]] = None
-
 def get_session(session_id: str):
-    if session_id not in sessions:
+    session = sessions.get(session_id)
+    if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    return sessions[session_id]
+    return session
 
 SessionDep = Annotated[Dict, Depends(get_session)]
 
-def verify_repo_limits(root_path: Path, gitignore_spec: Optional[Any] = None) -> None:
-    """Verify that the repository does not exceed size and file count limits."""
-    max_files = int(os.getenv("MAX_REPO_FILES", "100"))
-    max_size_mb = float(os.getenv("MAX_REPO_SIZE_MB", "50.0"))
-    max_size_bytes = int(max_size_mb * 1024 * 1024)
-
-    file_count = 0
-    total_size = 0
-
-    for root, dirs, files in os.walk(root_path):
-        if gitignore_spec:
-            dirs[:] = [d for d in dirs if not is_ignored(Path(root) / d, root_path, gitignore_spec)]
-
-        for file in files:
-            path = Path(root) / file
-            if gitignore_spec and is_ignored(path, root_path, gitignore_spec):
-                continue
-            
-            file_count += 1
-            if file_count > max_files:
-                raise ValueError(
-                    f"Repository exceeds the limit of {max_files} files. "
-                    "Please choose a smaller repository."
-                )
-
-            try:
-                total_size += path.stat().st_size
-                if total_size > max_size_bytes:
-                    raise ValueError(
-                        f"Repository exceeds the limit of {max_size_mb}MB total size. "
-                        "Please choose a smaller repository."
-                    )
-            except OSError:
-                pass
-
-def _initialize_session_logic(target: str, session_id: str):
-    """Internal helper to setup a session from a target path/URL."""
-    root = None
-    is_temp = False
-    try:
-        if target.startswith(("http://", "https://", "git@")):
-            root = clone_repo(target)
-            is_temp = True
-        else:
-            root = Path(target).resolve()
-            is_temp = False
-
-        if not root.exists() or not root.is_dir():
-            raise Exception(f"Invalid repository path: {target}")
-
-        gitignore_spec = get_gitignore_spec(root)
-        verify_repo_limits(root, gitignore_spec)
-
-        config = RepoConfig(
-            root_path=root,
-            gitignore_spec=gitignore_spec
-        )
-
-        sessions[session_id] = {
-            "config": config,
-            "is_temp": is_temp,
-            "temp_path": root if is_temp else None,
-            "history": []
-        }
-        return root
-    except Exception as e:
-        if is_temp and root and root.exists():
-            try:
-                shutil.rmtree(root)
-            except Exception:
-                pass
-        raise e
-
-
-# --- AG-UI Tool: initialize_repo ---
-
-@agent.tool
-async def initialize_repo(ctx: RunContext[StateDeps[AgentState]], repo_target: str) -> str:
-    """Initialize a repository from a URL or local path when no session exists yet."""
-    session_id = ctx.deps.state.session_id
-    try:
-        root = _initialize_session_logic(repo_target, session_id)
-        friendly_name = get_friendly_name(repo_target)
-        return f"Repository '{friendly_name}' initialized. You can now explore the codebase."
-    except Exception as e:
-        return f"Failed to initialize repository: {str(e)}"
-
 # --- Rate Limiters ---
-rate_limiter = RateLimiter(default_limit=20, default_window_seconds=3600)
-repo_init_limiter = RateLimiter(default_limit=10, default_window_seconds=3600)
+rate_limiter = RateLimiter(default_limit=20, default_window_seconds=3600, env_limit_var="MAX_MESSAGES_PER_HOUR")
+repo_init_limiter = RateLimiter(default_limit=10, default_window_seconds=3600, env_limit_var="MAX_REPO_INITS_PER_HOUR")
 
 # --- Endpoints ---
 
@@ -199,7 +109,7 @@ async def initialize_repo_endpoint(
     if repo_init_limiter.is_rate_limited(client_ip):
         raise HTTPException(
             status_code=429,
-            detail="Rate limit exceeded. Maximum 10 repository initializations per hour."
+            detail=f"Rate limit exceeded. Maximum {repo_init_limiter.limit} repository initializations per hour."
         )
 
     target = repo_target or (request_body.repo_target if request_body else None)
@@ -210,7 +120,7 @@ async def initialize_repo_endpoint(
     session_id = str(uuid.uuid4())
     
     try:
-        root = _initialize_session_logic(target, session_id)
+        await asyncio.to_thread(initialize_session_logic, target, session_id)
         friendly_name = get_friendly_name(target)
         return InitializeResponse(
             session_id=session_id,
@@ -232,17 +142,15 @@ async def get_file_tree(session_id: str):
     root = config.root_path
     spec = config.gitignore_spec
 
-    from repo_reader import is_ignored
-
     def build_tree(directory: Path) -> list:
         entries = []
         try:
             children = sorted(directory.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
-        except PermissionError:
+        except (PermissionError, FileNotFoundError):
             return entries
 
         for child in children:
-            if is_ignored(child, root, spec):
+            if child.is_symlink() or is_ignored(child, root, spec):
                 continue
             rel_path = str(child.relative_to(root)).replace("\\", "/")
             if child.is_dir():
@@ -266,12 +174,14 @@ async def get_file_tree(session_id: str):
 
 @app.delete("/session/{session_id}")
 async def close_session(session_id: str):
-    session = sessions.pop(session_id, None)
+    session = sessions.pop(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    if session["is_temp"] and session["temp_path"]:
-        shutil.rmtree(session["temp_path"])
+    if session.get("is_temp") and session.get("temp_path"):
+        temp_path = Path(session["temp_path"])
+        if temp_path.exists():
+            shutil.rmtree(temp_path, ignore_errors=True)
     
     return {"message": "Session closed and temporary files cleaned up"}
 
@@ -289,7 +199,6 @@ async def agui_endpoint(request: Request):
             return {"type": "http.request", "body": body, "more_body": False}
         request._receive = receive
         if body:
-            import json
             body_json = json.loads(body)
     except Exception as e:
         print(f"[DEBUG] Error reading request body for rate limiting: {e}")
@@ -301,14 +210,14 @@ async def agui_endpoint(request: Request):
     if rate_limiter.is_rate_limited(client_ip):
         raise HTTPException(
             status_code=429, 
-            detail="Rate limit exceeded. Maximum 20 messages per hour."
+            detail=f"Rate limit exceeded. Maximum {rate_limiter.limit} messages per hour."
         )
 
     # Check Session ID rate limit (if present)
     if session_id and rate_limiter.is_rate_limited(session_id):
         raise HTTPException(
             status_code=429, 
-            detail="Rate limit exceeded. Maximum 20 messages per hour."
+            detail=f"Rate limit exceeded. Maximum {rate_limiter.limit} messages per hour."
         )
 
     # Correlate OpenTelemetry/Langfuse traces with user session ID
@@ -326,7 +235,7 @@ async def agui_endpoint(request: Request):
         return await AGUIAdapter.dispatch_request(
             request, 
             agent=agent,
-            deps=StateDeps(AgentState())
+            deps=StateDeps(AgentState(session_id=session_id or ""))
         )
 
 
@@ -366,5 +275,3 @@ if __name__ == "__main__":
         host = "127.0.0.1"
             
     uvicorn.run(app, host=host, port=port)
-
-

@@ -38,4 +38,5 @@ frontend/.idea
 *.sw?
 
 # docker compose local testing files
+docker-compose.override.yml
 frontend/docker-compose.override.yml

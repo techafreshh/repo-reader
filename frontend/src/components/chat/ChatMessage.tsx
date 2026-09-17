@@ -161,7 +161,7 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  code({ inline, className, children, ...props }: any) {
+                  code({ inline, className, children, ...props }: React.ComponentPropsWithoutRef<'code'> & { inline?: boolean }) {
                     const match = /language-(\w+)/.exec(className || '');
                     return !inline && match ? (
                       <CodeBlock
