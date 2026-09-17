@@ -189,6 +189,7 @@ export function CodeViewerPane({
                 <button
                   type="button"
                   onClick={(e) => onCloseTab(tab.path, e)}
+                  onKeyDown={(e) => e.stopPropagation()}
                   className="ml-1 p-0.5 rounded-sm opacity-60 hover:opacity-100 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-opacity"
                   title="Close tab"
                 >

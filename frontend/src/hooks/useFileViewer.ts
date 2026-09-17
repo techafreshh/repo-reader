@@ -13,7 +13,8 @@ export interface FileTab {
 interface UseFileViewerProps {
   apiUrl?: string;
   sessionId?: string;
-  /** Changing this (e.g. the repo's treeVersion) drops all cached tabs. */
+  /** Changing any of apiUrl/sessionId/cacheKey (repo re-init, "New Chat",
+   *  webhook reconfigured) drops all cached tabs. */
   cacheKey?: string | number;
 }
 
@@ -25,18 +26,25 @@ export function useFileViewer({ apiUrl, sessionId, cacheKey }: UseFileViewerProp
   tabsRef.current = tabs;
   const inFlightRef = useRef<Set<string>>(new Set());
   const prevCacheKeyRef = useRef(cacheKey);
+  const prevSessionRef = useRef({ apiUrl, sessionId });
 
-  // Cached content is only valid for the repository it was fetched from, so
-  // a cacheKey change (repo re-initialized under the same session id) resets
-  // every tab instead of serving the previous repo's files.
+  // Cached content is only valid for the repository it was fetched from, so a
+  // cacheKey change (repo re-initialized under the same session id) or a
+  // session/apiUrl change ("New Chat", webhook reconfigured) resets every tab
+  // instead of serving the previous repo's files.
   useEffect(() => {
-    if (prevCacheKeyRef.current !== cacheKey) {
+    if (
+      prevCacheKeyRef.current !== cacheKey ||
+      prevSessionRef.current.apiUrl !== apiUrl ||
+      prevSessionRef.current.sessionId !== sessionId
+    ) {
       prevCacheKeyRef.current = cacheKey;
+      prevSessionRef.current = { apiUrl, sessionId };
       inFlightRef.current.clear();
       setTabs([]);
       setActiveTabPath(null);
     }
-  }, [cacheKey]);
+  }, [cacheKey, apiUrl, sessionId]);
 
   const activeTab = useMemo(
     () => tabs.find((t) => t.path === activeTabPath),
@@ -134,23 +142,23 @@ export function useFileViewer({ apiUrl, sessionId, cacheKey }: UseFileViewerProp
         e.stopPropagation();
       }
 
-      setTabs((prev) => {
-        const index = prev.findIndex((t) => t.path === path);
-        const filtered = prev.filter((t) => t.path !== path);
-
-        if (activeTabPath === path) {
-          if (filtered.length === 0) {
-            setActiveTabPath(null);
-            setIsOpen(false);
-          } else {
-            // Select previous tab if available, else first tab
-            const nextIndex = Math.max(0, index - 1);
-            setActiveTabPath(filtered[nextIndex].path);
-          }
+      // Decide the next active tab before updating; setters stay outside the
+      // setTabs updater so it remains pure (StrictMode/concurrent-safe).
+      if (activeTabPath === path) {
+        const current = tabsRef.current;
+        const index = current.findIndex((t) => t.path === path);
+        const filtered = current.filter((t) => t.path !== path);
+        if (filtered.length === 0) {
+          setActiveTabPath(null);
+          setIsOpen(false);
+        } else {
+          // Select previous tab if available, else first tab
+          const nextIndex = Math.max(0, index - 1);
+          setActiveTabPath(filtered[nextIndex].path);
         }
+      }
 
-        return filtered;
-      });
+      setTabs((prev) => prev.filter((t) => t.path !== path));
     },
     [activeTabPath]
   );

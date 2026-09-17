@@ -250,4 +250,57 @@ describe("useFileViewer", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.current.tabs.length).toBe(1);
   });
+
+  it("clears cached tabs when the sessionId changes even if cacheKey is unchanged (New Chat)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        path: "a.py",
+        name: "a.py",
+        content: "previous session content",
+        binary: false,
+        size: 23,
+      }),
+    } as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, rerender } = renderHook(
+      (props: { apiUrl: string; sessionId: string; cacheKey: number }) =>
+        useFileViewer(props),
+      {
+        initialProps: {
+          apiUrl: "http://localhost:7643",
+          sessionId: "session-one",
+          cacheKey: 0,
+        },
+      }
+    );
+
+    await act(async () => {
+      await result.current.openFile("a.py");
+    });
+    expect(result.current.tabs.length).toBe(1);
+    expect(result.current.activeTab?.content).toBe("previous session content");
+
+    // "New Chat" rotates the session id without bumping treeVersion →
+    // cached tabs from the previous session must be dropped
+    rerender({
+      apiUrl: "http://localhost:7643",
+      sessionId: "session-two",
+      cacheKey: 0,
+    });
+
+    expect(result.current.tabs).toEqual([]);
+    expect(result.current.activeTabPath).toBeNull();
+    // isOpen is intentionally left as-is (same as the cacheKey reset): the
+    // pane is hidden whenever tabs are empty until a file is opened again.
+
+    // Reopening in the new session refetches instead of serving stale content
+    await act(async () => {
+      await result.current.openFile("a.py");
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.current.tabs.length).toBe(1);
+    expect(result.current.isOpen).toBe(true);
+  });
 });

@@ -218,11 +218,11 @@ async def get_file_content(session_id: str, request: Request, path: str):
             "size": file_size,
         }
 
-    max_file_size = int(float(os.getenv("MAX_VIEW_FILE_MB", "5.0")) * 1024 * 1024)
+    max_file_size = int(float(os.getenv("MAX_VIEW_FILE_MB", "1.0")) * 1024 * 1024)
     if file_size > max_file_size:
         raise HTTPException(
             status_code=400,
-            detail=f"File exceeds maximum display size of {os.getenv('MAX_VIEW_FILE_MB', '5.0')}MB",
+            detail=f"File exceeds maximum display size of {os.getenv('MAX_VIEW_FILE_MB', '1.0')}MB",
         )
 
     try:

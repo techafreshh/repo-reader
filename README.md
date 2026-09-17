@@ -58,7 +58,7 @@ All settings are read from environment variables (see `.env.example`):
 | `RATE_LIMIT_WINDOW_SECONDS` | `3600` | Rate limit window. |
 | `MAX_REPO_FILES` | `200` | Maximum files in an analyzed repository. |
 | `MAX_REPO_SIZE_MB` | `50.0` | Maximum total repository size. |
-| `MAX_VIEW_FILE_MB` | `5.0` | Maximum size of a file served by the code viewer. |
+| `MAX_VIEW_FILE_MB` | `1.0` | Maximum size of a file served by the code viewer. |
 | `LANGFUSE_*` | — | Optional Langfuse observability keys. |
 
 ---
