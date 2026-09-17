@@ -25,11 +25,31 @@ from pydantic_ai.ui.ag_ui import AGUIAdapter
 from rate_limiter import RateLimiter
 
 
+async def _periodic_cleanup(interval_seconds: int = 3600):
+    """Periodically prune stale orphaned temporary repository clones."""
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            await asyncio.to_thread(store.cleanup_orphans)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[Warning] Background orphan cleanup failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store.cleanup_orphans()
-    yield
-    store.close()
+    cleanup_task = asyncio.create_task(_periodic_cleanup(3600))
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
+        store.close()
 
 
 app = FastAPI(title="Repo Reader API", lifespan=lifespan)
@@ -90,7 +110,7 @@ async def initialize_repo_endpoint(
     if repo_init_limiter.is_rate_limited(client_ip):
         raise HTTPException(
             status_code=429,
-            detail="Rate limit exceeded. Maximum 10 repository initializations per hour."
+            detail=f"Rate limit exceeded. Maximum {repo_init_limiter.limit} repository initializations per hour."
         )
 
     target = repo_target or (request_body.repo_target if request_body else None)
@@ -191,14 +211,14 @@ async def agui_endpoint(request: Request):
     if rate_limiter.is_rate_limited(client_ip):
         raise HTTPException(
             status_code=429, 
-            detail="Rate limit exceeded. Maximum 20 messages per hour."
+            detail=f"Rate limit exceeded. Maximum {rate_limiter.limit} messages per hour."
         )
 
     # Check Session ID rate limit (if present)
     if session_id and rate_limiter.is_rate_limited(session_id):
         raise HTTPException(
             status_code=429, 
-            detail="Rate limit exceeded. Maximum 20 messages per hour."
+            detail=f"Rate limit exceeded. Maximum {rate_limiter.limit} messages per hour."
         )
 
     # Correlate OpenTelemetry/Langfuse traces with user session ID

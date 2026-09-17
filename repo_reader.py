@@ -3,6 +3,7 @@ import re
 import ast
 import uuid
 import shutil
+import asyncio
 import mimetypes
 from pathlib import Path
 from typing import List, Optional
@@ -109,6 +110,9 @@ def initialize_session_logic(target: str, session_id: str) -> Path:
             root = clone_repo(target)
             is_temp = True
         else:
+            allow_local = os.getenv("ALLOW_LOCAL_REPO_TARGETS", "true").lower() in ("1", "true", "yes")
+            if not allow_local:
+                raise ValueError("Local repository paths are disabled on this server. Please provide a GitHub URL.")
             root = Path(target).resolve()
             is_temp = False
 
@@ -141,7 +145,7 @@ async def initialize_repo(ctx: RunContext[StateDeps[AgentState]], repo_target: s
     """Initialize a repository from a URL or local path when no session exists yet."""
     session_id = ctx.deps.state.session_id
     try:
-        initialize_session_logic(repo_target, session_id)
+        await asyncio.to_thread(initialize_session_logic, repo_target, session_id)
         friendly_name = get_friendly_name(repo_target)
         return f"Repository '{friendly_name}' initialized. You can now explore the codebase."
     except Exception as e:
@@ -206,6 +210,8 @@ def read_file(ctx: RunContext[StateDeps[AgentState]], filepath: str) -> str:
         return f"Error: Access denied. Path '{filepath}' is outside repository root."
     if not path.exists():
         return f"Error: File '{filepath}' not found."
+    if path.is_dir():
+        return f"Error: '{filepath}' is a directory. Use list_files to inspect directory contents."
     if is_ignored(path, config.root_path, config.gitignore_spec):
         return f"Error: File '{filepath}' is ignored by .gitignore."
     
@@ -247,7 +253,7 @@ def search_code(ctx: RunContext[StateDeps[AgentState]], pattern: str) -> str:
                     if regex.search(line):
                         rel_path = path.relative_to(config.root_path)
                         results.append(f"{rel_path}:{i+1}: {line.strip()}")
-            except:
+            except Exception:
                 continue
 
     if not results:
@@ -271,6 +277,12 @@ def get_file_structure(ctx: RunContext[StateDeps[AgentState]], filepath: str) ->
         return f"Error: Access denied. Path '{filepath}' is outside repository root."
     if not path.exists():
         return f"Error: File '{filepath}' not found."
+    if path.is_dir():
+        return f"Error: '{filepath}' is a directory. Use list_files to inspect directory contents."
+    if is_ignored(path, config.root_path, config.gitignore_spec):
+        return f"Error: File '{filepath}' is ignored by .gitignore."
+    if is_binary(path):
+        return f"Error: File '{filepath}' appears to be a binary file. Can only analyze text files."
     
     try:
         content = path.read_text(encoding="utf-8")
@@ -307,6 +319,10 @@ def analyze_python_ast(ctx: RunContext[StateDeps[AgentState]], filepath: str) ->
         return f"Error: Access denied. Path '{filepath}' is outside repository root."
     if not path.exists():
         return f"Error: File '{filepath}' not found."
+    if path.is_dir():
+        return f"Error: '{filepath}' is a directory, not a Python file."
+    if is_ignored(path, config.root_path, config.gitignore_spec):
+        return f"Error: File '{filepath}' is ignored by .gitignore."
     if not filepath.endswith('.py'):
         return f"Error: '{filepath}' is not a Python file. This tool only works with .py files."
 

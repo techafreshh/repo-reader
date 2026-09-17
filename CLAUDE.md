@@ -76,8 +76,11 @@ There is no backend pytest suite; verify imports with
 
 ## Gotchas
 
-- Sessions are persisted by `SessionStore`; restarting the API keeps them, but
-  temp clones live in `/tmp` and are pruned on startup when stale.
+- Sessions are persisted by `SessionStore`; restarting the API keeps them.
+  Leftover temp clones are pruned on startup and periodically every hour in the
+  background.
+- `ALLOW_LOCAL_REPO_TARGETS` guards local filesystem paths; disable it in
+  production to restrict analysis to remote Git repositories.
 - `RateLimiter` is in-memory and per-process. Multi-worker deployments need a
   shared store.
 - SQLite is written from both sync and async FastAPI paths; access is guarded by

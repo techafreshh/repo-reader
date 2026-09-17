@@ -52,6 +52,7 @@ All settings are read from environment variables (see `.env.example`):
 | `SESSION_DB_PATH` | `sessions.db` | SQLite file used to persist sessions across restarts. |
 | `SESSION_ORPHAN_MAX_AGE_SECONDS` | `3600` | Age after which untracked temp repo clones are cleaned up on startup. |
 | `CORS_ALLOW_ORIGINS` | `*` | Comma-separated allowed origins. When `*`, credentials are disabled. |
+| `ALLOW_LOCAL_REPO_TARGETS` | `true` | Allow initializing local filesystem paths. Set to `false` in production. |
 | `MAX_MESSAGES_PER_HOUR` | `20` | Per-IP/per-session chat rate limit. |
 | `MAX_REPO_INITS_PER_HOUR` | `10` | Per-IP repository initialization rate limit. |
 | `RATE_LIMIT_WINDOW_SECONDS` | `3600` | Rate limit window. |

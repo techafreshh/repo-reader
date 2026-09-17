@@ -39,6 +39,11 @@ def is_ignored(path: Path, root_path: Path, spec: Optional[pathspec.PathSpec]) -
         return False
 
 
+class GitCloneError(ValueError):
+    """Raised when cloning a repository fails or times out."""
+    pass
+
+
 def clone_repo(url: str) -> Path:
     """Clone a GitHub repository to a temporary directory."""
     temp_dir = Path(tempfile.mkdtemp(prefix="repo_reader_"))
@@ -59,12 +64,16 @@ def clone_repo(url: str) -> Path:
     except subprocess.TimeoutExpired:
         if temp_dir.exists():
             shutil.rmtree(temp_dir, ignore_errors=True)
-        raise TimeoutError(f"Git clone timed out after 60 seconds for '{url}'")
+        raise GitCloneError(f"Git clone timed out after 60 seconds for '{url}'")
     except subprocess.CalledProcessError as e:
         if temp_dir.exists():
             shutil.rmtree(temp_dir, ignore_errors=True)
-        err_msg = e.stderr.decode(errors="replace") if e.stderr else str(e)
-        raise Exception(f"Git clone failed: {err_msg}")
+        err_msg = e.stderr.decode(errors="replace").strip() if e.stderr else str(e)
+        raise GitCloneError(f"Git clone failed: {err_msg}")
+    except Exception as e:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        raise GitCloneError(f"Failed to clone repository: {str(e)}")
 
 
 def get_friendly_name(target: str) -> str:
