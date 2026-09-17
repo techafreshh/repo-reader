@@ -12,12 +12,6 @@ wheels/
 .agents/
 examples/
 
-# Local session database
-sessions.db
-*.db
-*.db-journal
-*.db-wal
-
 # Logs
 frontend/logs
 frontend/*.log

@@ -43,7 +43,7 @@ from repo_config import (
     is_ignored,
     verify_repo_limits,
 )
-from session_store import store
+from sessions import sessions
 
 console = Console()
 
@@ -78,7 +78,7 @@ agent = Agent(
 )
 
 def _get_config(ctx: RunContext[StateDeps[AgentState]]) -> RepoConfig:
-    session = store.get(ctx.deps.state.session_id)
+    session = sessions.get(ctx.deps.state.session_id)
     if not session:
         raise LookupError("No repository initialized. Please provide a GitHub URL or local path.")
     return session["config"]
@@ -102,7 +102,7 @@ def _resolve_safe_path(root_path: Path, target: str) -> Optional[Path]:
 # --- Session Initialization ---
 
 def initialize_session_logic(target: str, session_id: str) -> Path:
-    """Clone or resolve a repository target and persist a session for it."""
+    """Clone or resolve a repository target and register a session for it."""
     root = None
     is_temp = False
     try:
@@ -122,12 +122,12 @@ def initialize_session_logic(target: str, session_id: str) -> Path:
         gitignore_spec = get_gitignore_spec(root)
         verify_repo_limits(root, gitignore_spec)
 
-        store.create(
+        config = RepoConfig(root_path=root, gitignore_spec=gitignore_spec)
+        sessions.create(
             session_id,
-            root_path=root,
+            config=config,
             is_temp=is_temp,
             temp_path=root if is_temp else None,
-            history=[],
         )
         return root
     except Exception as e:
@@ -422,7 +422,7 @@ def main():
 
     try:
         initialize_session_logic(target or ".", session_id)
-        session = store.get(session_id)
+        session = sessions.get(session_id)
         root = session["config"].root_path
         temp_dir_to_clean = session["temp_path"]
 
@@ -456,7 +456,7 @@ def main():
         console.print(f"[bold red]Error:[/bold red] {e}")
 
     finally:
-        store.pop(session_id)
+        sessions.pop(session_id)
         if temp_dir_to_clean and Path(temp_dir_to_clean).exists():
             console.print(f"\n[dim]Cleaning up temporary files...[/dim]")
             shutil.rmtree(temp_dir_to_clean)

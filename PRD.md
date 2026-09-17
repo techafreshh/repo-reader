@@ -44,10 +44,10 @@ repository so it can answer structural and behavioral questions with evidence.
   resolved in place.
 - A session can be closed via `DELETE /session/{session_id}`, which removes the
   temp clone.
-- Sessions are persisted in SQLite (`SESSION_DB_PATH`) and survive process
-  restarts.
-- On startup, stale rows and orphaned temp clones older than
-  `SESSION_ORPHAN_MAX_AGE_SECONDS` are cleaned up.
+- Sessions are held in memory for the process lifetime; a restart clears
+  loaded repositories and users re-initialize by sending the repo URL again.
+- On startup, orphaned temp clones older than `SESSION_ORPHAN_MAX_AGE_SECONDS`
+  are cleaned up (and then again every hour in the background).
 
 ### 6.2 Agent capabilities
 The agent exposes read-only tools:
@@ -102,11 +102,12 @@ See `.env.example` and the configuration table in `README.md`.
 ## 9. Success Metrics
 
 - Repository loads and first answer streams end-to-end.
-- Sessions survive an API restart.
+- A restarted API cleanly serves fresh sessions; orphaned temp clones are
+  swept on startup and hourly.
 - Oversized repos and rate-limited clients are rejected as specified.
 
 ## 10. Open Questions
 
 - Multi-worker deployment will require a shared session/rate-limit store
-  (currently SQLite is per-process/local file).
+  (sessions and rate limits are currently per-process).
 - Private repository access and authentication are out of scope pending demand.

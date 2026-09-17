@@ -17,7 +17,7 @@ A deep-analysis agent that can navigate repositories, search for logic, and expl
 
 ### 2. FastAPI Chat API (`chat_api.py`)
 Expose the Repo Reader as a production-ready REST API.
-*   **Session-Based Chat**: Maintains conversation history for continuous context, persisted in SQLite (`SESSION_DB_PATH`) so sessions survive restarts.
+*   **Session-Based Chat**: Maintains conversation history for continuous context. Sessions live in memory per process — after a restart, re-send the repo URL (your chat history stays in the browser).
 *   **Async/Await**: High-performance asynchronous execution.
 *   **Auto-Cleanup**: Temporary cloned repositories are wiped when the session is closed.
 
@@ -49,8 +49,7 @@ All settings are read from environment variables (see `.env.example`):
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | API key for the model provider. |
 | `MODEL_NAME` | `openrouter:deepseek/deepseek-v4-flash` | Provider-prefixed Pydantic AI model string for the repo reader agent. |
-| `SESSION_DB_PATH` | `sessions.db` | SQLite file used to persist sessions across restarts. |
-| `SESSION_ORPHAN_MAX_AGE_SECONDS` | `3600` | Age after which untracked temp repo clones are cleaned up on startup. |
+| `SESSION_ORPHAN_MAX_AGE_SECONDS` | `3600` | Age after which untracked temp repo clones are removed (on startup, then hourly). |
 | `CORS_ALLOW_ORIGINS` | `*` | Comma-separated allowed origins. When `*`, credentials are disabled. |
 | `ALLOW_LOCAL_REPO_TARGETS` | `true` | Allow initializing local filesystem paths. Set to `false` in production. |
 | `MAX_MESSAGES_PER_HOUR` | `20` | Per-IP/per-session chat rate limit. |

@@ -20,7 +20,7 @@ from repo_reader import (
     initialize_session_logic,
 )
 from repo_config import get_friendly_name, is_ignored
-from session_store import store
+from sessions import sessions
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from rate_limiter import RateLimiter
 
@@ -30,7 +30,7 @@ async def _periodic_cleanup(interval_seconds: int = 3600):
     while True:
         try:
             await asyncio.sleep(interval_seconds)
-            await asyncio.to_thread(store.cleanup_orphans)
+            await asyncio.to_thread(sessions.cleanup_orphans)
         except asyncio.CancelledError:
             break
         except Exception as e:
@@ -39,7 +39,7 @@ async def _periodic_cleanup(interval_seconds: int = 3600):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    store.cleanup_orphans()
+    sessions.cleanup_orphans()
     cleanup_task = asyncio.create_task(_periodic_cleanup(3600))
     try:
         yield
@@ -49,7 +49,6 @@ async def lifespan(app: FastAPI):
             await cleanup_task
         except asyncio.CancelledError:
             pass
-        store.close()
 
 
 app = FastAPI(title="Repo Reader API", lifespan=lifespan)
@@ -86,7 +85,7 @@ class InitializeResponse(BaseModel):
     message: str
 
 def get_session(session_id: str):
-    session = store.get(session_id)
+    session = sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
@@ -135,7 +134,7 @@ async def initialize_repo_endpoint(
 @app.get("/tree/{session_id}")
 async def get_file_tree(session_id: str):
     """Return a nested JSON file tree for the loaded repository."""
-    session = store.get(session_id)
+    session = sessions.get(session_id)
     if not session:
         return {"tree": [], "initialized": False}
 
@@ -175,7 +174,7 @@ async def get_file_tree(session_id: str):
 
 @app.delete("/session/{session_id}")
 async def close_session(session_id: str):
-    session = store.pop(session_id)
+    session = sessions.pop(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
