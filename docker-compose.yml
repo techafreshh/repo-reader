@@ -7,6 +7,10 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      # Chat clients are unauthenticated; local paths would let them read
+      # container-local directories. Override in .env for local dev only.
+      - ALLOW_LOCAL_REPO_TARGETS=false
     # No ports exposed here! The backend is completely hidden from the internet.
     # It is only accessible to the frontend container on the internal Docker network.
 
