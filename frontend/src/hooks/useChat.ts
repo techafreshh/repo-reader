@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { HttpAgent, EventType } from '@ag-ui/client';
 import type { BaseEvent } from '@ag-ui/core';
 import type { Message, ToolCall, WebhookConfig } from '@/types/chat';
+import { friendlyRunErrorMessage } from '@/lib/agentErrors';
 
 interface AgUiEventPayload {
   toolCallName?: string;
@@ -374,11 +375,11 @@ export function useChat() {
                 break;
               }
               case EventType.RUN_ERROR: {
-                const errorMsg = payload.message || 'Unknown error';
+                const errorMsg = friendlyRunErrorMessage(payload.message || 'Unknown error');
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
-                      ? { ...m, content: `Error: ${errorMsg}`, status: 'error', toolCalls: toolCalls.length > 0 ? toolCalls.map(tc => ({ ...tc })) : undefined }
+                      ? { ...m, content: errorMsg, status: 'error', toolCalls: toolCalls.length > 0 ? toolCalls.map(tc => ({ ...tc })) : undefined }
                       : m
                   )
                 );

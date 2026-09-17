@@ -31,6 +31,7 @@ if LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY:
 from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.ui import StateDeps
+from pydantic_ai.usage import UsageLimits
 from pydantic_ai.messages import ModelMessage
 from rich.console import Console
 from rich.markdown import Markdown
@@ -49,6 +50,12 @@ console = Console()
 
 MODEL_NAME = os.getenv("MODEL_NAME", "openrouter:deepseek/deepseek-v4-flash")
 
+# Max model requests per agent run (one chat message / CLI turn). Tool results
+# surface the remaining budget so the model wraps up before the hard cutoff.
+AGENT_REQUEST_LIMIT = int(os.getenv("MAX_MODEL_REQUESTS_PER_MESSAGE", "20"))
+MAX_READ_LINES = 400
+MAX_READ_CHARS = 30_000
+
 # --- Models & Configuration ---
 
 class AgentState(BaseModel):
@@ -61,13 +68,19 @@ agent = Agent(
     deps_type=StateDeps[AgentState],
     description="An AI agent that explores and explains code repositories.",
     system_prompt=(
-        "You are an expert software engineer and repository analyst. "
-        "Your goal is to help users understand a codebase by exploring files, "
-        "searching for symbols, and tracing logic. "
-        "Always start by listing files if you're unsure of the project structure. "
-        "For Python files (.py), prefer using the analyze_python_ast tool first to get a "
-        "token-efficient overview of classes, functions, and docstrings before reading the full file. "
-        "When explaining code, be precise and mention 'what' it does and 'why' it's designed that way. "
+        "You are an expert software engineer and repository analyst. Help users understand "
+        "the loaded codebase by exploring files, searching for symbols, and tracing logic.\n"
+        "Exploration discipline:\n"
+        "- Plan briefly, then explore with purpose. Call list_files once for structure, then prefer "
+        "analyze_python_ast or get_file_structure for overviews and search_code / find_references to "
+        "locate logic. Use read_file only for the few files that actually answer the question.\n"
+        "- Never read (or re-read) a file whose contents earlier tool results already showed you.\n"
+        "- Stop exploring as soon as you can answer; a handful of well-chosen tool calls is enough for "
+        "most questions. Tool results include a request budget — as it runs low, stop calling tools and "
+        "answer with what you have.\n"
+        "Answer style: be concise. Lead with the direct answer, explain what the code does and why, cite "
+        "file paths (with line numbers from tool results) as evidence, and never paste large code blocks "
+        "back to the user. Never mention the request budget in your answer — it is internal mechanics.\n"
         "CRITICAL RULE: You must ONLY answer queries that are directly related to the code, structure, "
         "configuration, logic, or documentation of the current repository/project. If the user's query is "
         "unrelated to the current repository or codebase, you must decline to answer, politely inform them "
@@ -76,6 +89,16 @@ agent = Agent(
     ),
     instrument=True
 )
+
+def _budget_note(ctx: RunContext[StateDeps[AgentState]]) -> str:
+    """Append the remaining per-run request budget to a tool result."""
+    remaining = AGENT_REQUEST_LIMIT - ctx.usage.requests
+    if remaining <= 3:
+        return (
+            f"\n\n[Request budget: {remaining} left. Do not call any more tools — "
+            "give your best answer now with what you have.]"
+        )
+    return f"\n\n[Request budget: {remaining} of {AGENT_REQUEST_LIMIT} left.]"
 
 def _get_config(ctx: RunContext[StateDeps[AgentState]]) -> RepoConfig:
     session = sessions.get(ctx.deps.state.session_id)
@@ -147,7 +170,10 @@ async def initialize_repo(ctx: RunContext[StateDeps[AgentState]], repo_target: s
     try:
         await asyncio.to_thread(initialize_session_logic, repo_target, session_id)
         friendly_name = get_friendly_name(repo_target)
-        return f"Repository '{friendly_name}' initialized. You can now explore the codebase."
+        return (
+            f"Repository '{friendly_name}' initialized. You can now explore the codebase."
+            f"{_budget_note(ctx)}"
+        )
     except Exception as e:
         return f"Failed to initialize repository: {str(e)}"
 
@@ -174,18 +200,22 @@ def list_files(ctx: RunContext[StateDeps[AgentState]], subdir: str = ".") -> str
                 files_list.append(str(path.relative_to(config.root_path)))
 
     if not files_list:
-        return "No files found (or all are ignored)."
-    
+        return "No files found (or all are ignored)." + _budget_note(ctx)
+
     total_files = len(files_list)
     console.print(f"[dim]Found {total_files} files.[/dim]")
-    
+
     # Truncate if there are too many files to avoid token limits
     MAX_FILES = 500
     if total_files > MAX_FILES:
         truncated = files_list[:MAX_FILES]
-        return "\n".join(truncated) + f"\n\n... (truncated {total_files - MAX_FILES} more files. Please ask to see specific subdirectories if needed.)"
-    
-    return "\n".join(files_list)
+        return (
+            "\n".join(truncated)
+            + f"\n\n... (truncated {total_files - MAX_FILES} more files. Please ask to see specific subdirectories if needed.)"
+            + _budget_note(ctx)
+        )
+
+    return "\n".join(files_list) + _budget_note(ctx)
 
 def is_binary(path: Path) -> bool:
     """Check if a file is binary by looking at its extension and content."""
@@ -217,12 +247,25 @@ def read_file(ctx: RunContext[StateDeps[AgentState]], filepath: str) -> str:
     
     if is_binary(path):
         return f"Error: File '{filepath}' appears to be a binary file. Can only read text files."
-    
+
     try:
         content = path.read_text(encoding="utf-8")
-        return f"--- File: {filepath} ---\n{content}"
     except Exception as e:
         return f"Error reading file '{filepath}': {e}"
+
+    total_lines = len(content.splitlines())
+    note = ""
+    if total_lines > MAX_READ_LINES:
+        content = "\n".join(content.splitlines()[:MAX_READ_LINES])
+        note = (
+            f"\n\n... (truncated at line {MAX_READ_LINES} of {total_lines}; "
+            "use search_code to target specific sections.)"
+        )
+    elif len(content) > MAX_READ_CHARS:
+        content = content[:MAX_READ_CHARS]
+        note = f"\n\n... (truncated at {MAX_READ_CHARS} characters; use search_code to target specific sections.)"
+
+    return f"--- File: {filepath} ---\n{content}{note}{_budget_note(ctx)}"
 
 @agent.tool
 def search_code(ctx: RunContext[StateDeps[AgentState]], pattern: str) -> str:
@@ -257,12 +300,12 @@ def search_code(ctx: RunContext[StateDeps[AgentState]], pattern: str) -> str:
                 continue
 
     if not results:
-        return f"No matches found for '{pattern}'."
-    
+        return f"No matches found for '{pattern}'." + _budget_note(ctx)
+
     if len(results) > 50:
-        return "\n".join(results[:50]) + f"\n... (truncated {len(results)-50} more results)"
-    
-    return "\n".join(results)
+        return "\n".join(results[:50]) + f"\n... (truncated {len(results)-50} more results)" + _budget_note(ctx)
+
+    return "\n".join(results) + _budget_note(ctx)
 
 @agent.tool
 def get_file_structure(ctx: RunContext[StateDeps[AgentState]], filepath: str) -> str:
@@ -292,8 +335,8 @@ def get_file_structure(ctx: RunContext[StateDeps[AgentState]], filepath: str) ->
                 structure.append(line.strip())
         
         if not structure:
-            return f"No classes or functions found in '{filepath}'."
-        return f"Structure of {filepath}:\n" + "\n".join(structure)
+            return f"No classes or functions found in '{filepath}'." + _budget_note(ctx)
+        return f"Structure of {filepath}:\n" + "\n".join(structure) + _budget_note(ctx)
     except Exception as e:
         return f"Error analyzing '{filepath}': {e}"
 
@@ -403,9 +446,9 @@ def analyze_python_ast(ctx: RunContext[StateDeps[AgentState]], filepath: str) ->
             lines.append("")
 
     if len(lines) <= 2:
-        return f"No classes or functions found in '{filepath}'."
+        return f"No classes or functions found in '{filepath}'." + _budget_note(ctx)
 
-    return f"--- AST Analysis: {filepath} ---\n" + "\n".join(lines)
+    return f"--- AST Analysis: {filepath} ---\n" + "\n".join(lines) + _budget_note(ctx)
 
 # --- CLI Implementation ---
 
@@ -440,7 +483,12 @@ def main():
                 if not prompt.strip(): continue
 
                 with console.status("[bold green]Analyzing...[/bold green]"):
-                    result = agent.run_sync(prompt, deps=deps, message_history=message_history)
+                    result = agent.run_sync(
+                        prompt,
+                        deps=deps,
+                        message_history=message_history,
+                        usage_limits=UsageLimits(request_limit=AGENT_REQUEST_LIMIT),
+                    )
                 
                 message_history = result.new_messages()
                 console.print("\n[bold magenta]Repo Intelligence:[/bold magenta]")

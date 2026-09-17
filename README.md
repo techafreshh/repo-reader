@@ -49,6 +49,7 @@ All settings are read from environment variables (see `.env.example`):
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | API key for the model provider. |
 | `MODEL_NAME` | `openrouter:deepseek/deepseek-v4-flash` | Provider-prefixed Pydantic AI model string for the repo reader agent. |
+| `MAX_MODEL_REQUESTS_PER_MESSAGE` | `20` | Max model requests per chat message. Tool results surface the remaining budget so the agent stops exploring in time. |
 | `SESSION_ORPHAN_MAX_AGE_SECONDS` | `3600` | Age after which untracked temp repo clones are removed (on startup, then hourly). |
 | `CORS_ALLOW_ORIGINS` | `*` | Comma-separated allowed origins. When `*`, credentials are disabled. |
 | `ALLOW_LOCAL_REPO_TARGETS` | `true` | Allow initializing local filesystem paths. Set to `false` in production. |

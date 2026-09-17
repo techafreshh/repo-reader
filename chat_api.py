@@ -20,10 +20,12 @@ from repo_reader import (
     initialize_session_logic,
     _resolve_safe_path,
     is_binary,
+    AGENT_REQUEST_LIMIT,
 )
 from repo_config import get_friendly_name, is_ignored
 from sessions import sessions
 from pydantic_ai.ui.ag_ui import AGUIAdapter
+from pydantic_ai.usage import UsageLimits
 from rate_limiter import RateLimiter
 
 
@@ -298,9 +300,10 @@ async def agui_endpoint(request: Request):
 
     with context_manager:
         return await AGUIAdapter.dispatch_request(
-            request, 
+            request,
             agent=agent,
-            deps=StateDeps(AgentState(session_id=session_id or ""))
+            deps=StateDeps(AgentState(session_id=session_id or "")),
+            usage_limits=UsageLimits(request_limit=AGENT_REQUEST_LIMIT),
         )
 
 

@@ -82,6 +82,9 @@ The agent exposes read-only tools:
 - `MAX_MESSAGES_PER_HOUR` / `RATE_LIMIT_WINDOW_SECONDS` enforce a sliding-window
   limit per client IP and per session id (HTTP `429`).
 - Repository initialization has its own limit (10/hour per IP).
+- `MAX_MODEL_REQUESTS_PER_MESSAGE` caps model requests per chat message; tool
+  results surface the remaining budget so the agent wraps up instead of
+  erroring mid-exploration.
 
 ### 6.5 Frontend
 - Chat UI with streaming assistant messages, markdown and syntax-highlighted
