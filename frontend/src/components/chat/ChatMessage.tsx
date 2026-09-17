@@ -1,6 +1,6 @@
 import { Message } from '@/types/chat';
 import { cn } from '@/lib/utils';
-import { AlertCircle, RotateCcw, Clipboard, Copy, Code, Check, ThumbsUp, ThumbsDown, ChevronRight } from 'lucide-react';
+import { AlertCircle, RotateCcw, Clipboard, Copy, Code, Check, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -13,6 +13,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { useState } from 'react';
 import { LoadingDots } from './LoadingDots';
+import { ToolCallList } from './ToolCallList';
 
 interface CodeBlockProps {
   language: string;
@@ -97,8 +98,6 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
   const [isCopied, setIsCopied] = useState(false);
   const [thumbUpActive, setThumbUpActive] = useState(false);
   const [thumbDownActive, setThumbDownActive] = useState(false);
-  const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
-  const [isToolsExpanded, setIsToolsExpanded] = useState(false);
   const isUser = message.role === 'user';
   const isStreaming = message.status === 'streaming';
   const isError = message.status === 'error';
@@ -122,15 +121,6 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
     setThumbUpActive(false);
   };
 
-  const toggleTool = (id: string) => {
-    setExpandedTools((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
   return (
     <div
       className={cn(
@@ -140,111 +130,16 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
     >
       <div
         className={cn(
-          'relative max-w-[85%] md:max-w-[70%] rounded-3xl px-4 py-3',
+          'relative rounded-3xl',
           isUser
-            ? 'bg-primary text-primary-foreground'
-            : 'bg-transparent border-transparent',
-          isError && 'border-destructive/50 bg-destructive/10'
+            ? 'max-w-[85%] px-4 py-3 md:max-w-[70%] bg-primary text-primary-foreground'
+            : 'w-full border-transparent',
+          isError && 'border-destructive/50 bg-destructive/10 px-4 py-3'
         )}
       >
-        {/* Tool Calls */}
+        {/* Tool Calls — full width of the assistant message rectangle */}
         {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
-          <div className="mb-3 space-y-1.5">
-            {message.toolCalls
-              .slice(0, message.toolCalls.length > 3 && !isToolsExpanded ? 2 : undefined)
-              .map((tc) => (
-                <div
-                  key={tc.id}
-                  className="rounded-xl border border-border/60 bg-card/50 overflow-hidden"
-                >
-                  <button
-                    onClick={() => toggleTool(tc.id)}
-                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-muted/30 transition-colors"
-                  >
-                    <ChevronRight
-                      className={cn(
-                        'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
-                        expandedTools.has(tc.id) && 'rotate-90'
-                      )}
-                    />
-                    <span
-                      className={cn(
-                        'h-2 w-2 shrink-0 rounded-full',
-                        tc.status === 'running'
-                          ? 'bg-amber-400 animate-pulse'
-                          : tc.status === 'done'
-                            ? 'bg-emerald-500'
-                            : 'bg-red-500'
-                      )}
-                    />
-                    <span className="text-sm font-medium text-foreground truncate">
-                      {tc.name}
-                    </span>
-                    <span className="ml-auto shrink-0">
-                      <span
-                        className={cn(
-                          'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
-                          tc.status === 'running'
-                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                            : tc.status === 'done'
-                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                        )}
-                      >
-                          {tc.status === 'running' ? 'Running' : tc.status === 'done' ? 'Done' : 'Error'}
-                      </span>
-                    </span>
-                  </button>
-                  {expandedTools.has(tc.id) && (
-                    <div className="border-t border-border/40 bg-muted/20 px-3.5 py-2.5 text-xs font-mono space-y-3.5 overflow-x-auto">
-                      {tc.args && (
-                        <div>
-                          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
-                            Parameters
-                          </div>
-                          <pre className="p-2 rounded-lg bg-zinc-950/80 border border-border/40 text-zinc-300 leading-normal break-all whitespace-pre-wrap">
-                            {(() => {
-                              try {
-                                return JSON.stringify(JSON.parse(tc.args), null, 2);
-                              } catch {
-                                return tc.args;
-                              }
-                            })()}
-                          </pre>
-                        </div>
-                      )}
-                      {tc.result && (
-                        <div>
-                          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
-                            Response
-                          </div>
-                          <pre className="p-2 rounded-lg bg-zinc-950/80 border border-border/40 text-zinc-300 leading-normal break-all whitespace-pre-wrap">
-                            {(() => {
-                              try {
-                                return JSON.stringify(JSON.parse(tc.result), null, 2);
-                              } catch {
-                                return tc.result;
-                              }
-                            })()}
-                          </pre>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-            {message.toolCalls.length > 3 && (
-              <button
-                onClick={() => setIsToolsExpanded(!isToolsExpanded)}
-                className="flex w-full items-center justify-center gap-2 px-3 py-2 rounded-xl border border-dashed border-border/60 bg-muted/10 hover:bg-muted/20 text-xs font-semibold text-muted-foreground transition-all duration-200"
-              >
-                <span>
-                  {isToolsExpanded ? 'Show less' : `+ ${message.toolCalls.length - 2} more tool calls`}
-                </span>
-              </button>
-            )}
-          </div>
+          <ToolCallList toolCalls={message.toolCalls} />
         )}
 
         {/* Message content */}
