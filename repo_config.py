@@ -24,7 +24,9 @@ def get_gitignore_spec(root_path: Path) -> pathspec.PathSpec:
     return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
 
 
-def is_ignored(path: Path, root_path: Path, spec: pathspec.PathSpec) -> bool:
+def is_ignored(path: Path, root_path: Path, spec: Optional[pathspec.PathSpec]) -> bool:
+    if spec is None:
+        return False
     try:
         relative_path = path.relative_to(root_path)
         # Convert to posix style (forward slashes)
@@ -40,13 +42,29 @@ def is_ignored(path: Path, root_path: Path, spec: pathspec.PathSpec) -> bool:
 def clone_repo(url: str) -> Path:
     """Clone a GitHub repository to a temporary directory."""
     temp_dir = Path(tempfile.mkdtemp(prefix="repo_reader_"))
+    git_env = {
+        **os.environ,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_SSH_COMMAND": "ssh -o BatchMode=yes",
+    }
     try:
-        subprocess.run(["git", "clone", "--depth", "1", url, str(temp_dir)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "clone", "--depth", "1", "--", url, str(temp_dir)],
+            check=True,
+            capture_output=True,
+            timeout=60,
+            env=git_env,
+        )
         return temp_dir
+    except subprocess.TimeoutExpired:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        raise TimeoutError(f"Git clone timed out after 60 seconds for '{url}'")
     except subprocess.CalledProcessError as e:
         if temp_dir.exists():
-            shutil.rmtree(temp_dir)
-        raise Exception(f"Git clone failed: {e.stderr.decode()}")
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        err_msg = e.stderr.decode(errors="replace") if e.stderr else str(e)
+        raise Exception(f"Git clone failed: {err_msg}")
 
 
 def get_friendly_name(target: str) -> str:
@@ -68,7 +86,7 @@ def get_friendly_name(target: str) -> str:
 
 def verify_repo_limits(root_path: Path, gitignore_spec: Optional[Any] = None) -> None:
     """Verify that the repository does not exceed size and file count limits."""
-    max_files = int(os.getenv("MAX_REPO_FILES", "100"))
+    max_files = int(os.getenv("MAX_REPO_FILES", "200"))
     max_size_mb = float(os.getenv("MAX_REPO_SIZE_MB", "50.0"))
     max_size_bytes = int(max_size_mb * 1024 * 1024)
 

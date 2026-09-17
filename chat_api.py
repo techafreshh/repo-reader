@@ -1,15 +1,17 @@
+import asyncio
 from contextlib import asynccontextmanager
+import json
+import os
+from pathlib import Path
+import shutil
+from typing import Dict, Optional, Annotated
+import uuid
 
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Dict, Optional, Annotated
-import uuid
-import shutil
-from pathlib import Path
-import os
 
 from repo_reader import (
     agent,
@@ -27,6 +29,7 @@ from rate_limiter import RateLimiter
 async def lifespan(app: FastAPI):
     store.cleanup_orphans()
     yield
+    store.close()
 
 
 app = FastAPI(title="Repo Reader API", lifespan=lifespan)
@@ -71,8 +74,8 @@ def get_session(session_id: str):
 SessionDep = Annotated[Dict, Depends(get_session)]
 
 # --- Rate Limiters ---
-rate_limiter = RateLimiter(default_limit=20, default_window_seconds=3600)
-repo_init_limiter = RateLimiter(default_limit=10, default_window_seconds=3600)
+rate_limiter = RateLimiter(default_limit=20, default_window_seconds=3600, env_limit_var="MAX_MESSAGES_PER_HOUR")
+repo_init_limiter = RateLimiter(default_limit=10, default_window_seconds=3600, env_limit_var="MAX_REPO_INITS_PER_HOUR")
 
 # --- Endpoints ---
 
@@ -98,7 +101,7 @@ async def initialize_repo_endpoint(
     session_id = str(uuid.uuid4())
     
     try:
-        initialize_session_logic(target, session_id)
+        await asyncio.to_thread(initialize_session_logic, target, session_id)
         friendly_name = get_friendly_name(target)
         return InitializeResponse(
             session_id=session_id,
@@ -128,7 +131,7 @@ async def get_file_tree(session_id: str):
             return entries
 
         for child in children:
-            if is_ignored(child, root, spec):
+            if child.is_symlink() or is_ignored(child, root, spec):
                 continue
             rel_path = str(child.relative_to(root)).replace("\\", "/")
             if child.is_dir():
@@ -177,7 +180,6 @@ async def agui_endpoint(request: Request):
             return {"type": "http.request", "body": body, "more_body": False}
         request._receive = receive
         if body:
-            import json
             body_json = json.loads(body)
     except Exception as e:
         print(f"[DEBUG] Error reading request body for rate limiting: {e}")
@@ -214,7 +216,7 @@ async def agui_endpoint(request: Request):
         return await AGUIAdapter.dispatch_request(
             request, 
             agent=agent,
-            deps=StateDeps(AgentState())
+            deps=StateDeps(AgentState(session_id=session_id or ""))
         )
 
 

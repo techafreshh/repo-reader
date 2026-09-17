@@ -82,6 +82,22 @@ def _get_config(ctx: RunContext[StateDeps[AgentState]]) -> RepoConfig:
         raise LookupError("No repository initialized. Please provide a GitHub URL or local path.")
     return session["config"]
 
+def _resolve_safe_path(root_path: Path, target: str) -> Optional[Path]:
+    """Resolve a target path safely, ensuring it resides within root_path.
+
+    Returns the resolved Path if within root_path, or None if it escapes.
+    """
+    try:
+        resolved_root = root_path.resolve()
+        raw = Path(target)
+        resolved = raw.resolve() if raw.is_absolute() else (resolved_root / raw).resolve()
+        if resolved == resolved_root or resolved.is_relative_to(resolved_root):
+            return resolved
+        return None
+    except Exception:
+        return None
+
+
 # --- Session Initialization ---
 
 def initialize_session_logic(target: str, session_id: str) -> Path:
@@ -97,7 +113,7 @@ def initialize_session_logic(target: str, session_id: str) -> Path:
             is_temp = False
 
         if not root.exists() or not root.is_dir():
-            raise Exception(f"Invalid repository path: {target}")
+            raise ValueError(f"Invalid repository path: '{target}' does not exist or is not a directory.")
 
         gitignore_spec = get_gitignore_spec(root)
         verify_repo_limits(root, gitignore_spec)
@@ -113,7 +129,7 @@ def initialize_session_logic(target: str, session_id: str) -> Path:
     except Exception as e:
         if is_temp and root and root.exists():
             try:
-                shutil.rmtree(root)
+                shutil.rmtree(root, ignore_errors=True)
             except Exception:
                 pass
         raise e
@@ -139,9 +155,9 @@ def list_files(ctx: RunContext[StateDeps[AgentState]], subdir: str = ".") -> str
         config = _get_config(ctx)
     except LookupError as e:
         return f"Error: {e}"
-    target_dir = config.root_path / subdir
-    if not target_dir.exists() or not target_dir.is_dir():
-        return f"Error: Directory '{subdir}' not found."
+    target_dir = _resolve_safe_path(config.root_path, subdir)
+    if not target_dir or not target_dir.exists() or not target_dir.is_dir():
+        return f"Error: Directory '{subdir}' not found or outside repository."
 
     files_list = []
     for root, dirs, files in os.walk(target_dir):
@@ -185,7 +201,9 @@ def read_file(ctx: RunContext[StateDeps[AgentState]], filepath: str) -> str:
         config = _get_config(ctx)
     except LookupError as e:
         return f"Error: {e}"
-    path = config.root_path / filepath
+    path = _resolve_safe_path(config.root_path, filepath)
+    if not path:
+        return f"Error: Access denied. Path '{filepath}' is outside repository root."
     if not path.exists():
         return f"Error: File '{filepath}' not found."
     if is_ignored(path, config.root_path, config.gitignore_spec):
@@ -208,9 +226,13 @@ def search_code(ctx: RunContext[StateDeps[AgentState]], pattern: str) -> str:
         config = _get_config(ctx)
     except LookupError as e:
         return f"Error: {e}"
+
+    try:
+        regex = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        return f"Error: Invalid regular expression '{pattern}': {e}"
+
     results = []
-    regex = re.compile(pattern, re.IGNORECASE)
-    
     for root, dirs, files in os.walk(config.root_path):
         dirs[:] = [d for d in dirs if not is_ignored(Path(root) / d, config.root_path, config.gitignore_spec)]
         for file in files:
@@ -244,7 +266,9 @@ def get_file_structure(ctx: RunContext[StateDeps[AgentState]], filepath: str) ->
         config = _get_config(ctx)
     except LookupError as e:
         return f"Error: {e}"
-    path = config.root_path / filepath
+    path = _resolve_safe_path(config.root_path, filepath)
+    if not path:
+        return f"Error: Access denied. Path '{filepath}' is outside repository root."
     if not path.exists():
         return f"Error: File '{filepath}' not found."
     
@@ -278,7 +302,9 @@ def analyze_python_ast(ctx: RunContext[StateDeps[AgentState]], filepath: str) ->
         config = _get_config(ctx)
     except LookupError as e:
         return f"Error: {e}"
-    path = config.root_path / filepath
+    path = _resolve_safe_path(config.root_path, filepath)
+    if not path:
+        return f"Error: Access denied. Path '{filepath}' is outside repository root."
     if not path.exists():
         return f"Error: File '{filepath}' not found."
     if not filepath.endswith('.py'):

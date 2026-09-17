@@ -2,14 +2,20 @@ import time
 import os
 import threading
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 class RateLimiter:
-    def __init__(self, default_limit: int = 20, default_window_seconds: int = 3600):
+    def __init__(
+        self,
+        default_limit: int = 20,
+        default_window_seconds: int = 3600,
+        env_limit_var: Optional[str] = None,
+    ):
         self._lock = threading.Lock()
         
         # Read from environment variables if present, fallback to defaults
-        env_limit = os.getenv("MAX_MESSAGES_PER_HOUR")
+        var_name = env_limit_var or "MAX_MESSAGES_PER_HOUR"
+        env_limit = os.getenv(var_name)
         self.limit = int(env_limit) if env_limit else default_limit
         
         env_window = os.getenv("RATE_LIMIT_WINDOW_SECONDS")

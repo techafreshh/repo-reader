@@ -28,6 +28,8 @@ class SessionStore:
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL;")
+        self._conn.execute("PRAGMA busy_timeout=5000;")
         self._init_schema()
 
     def _init_schema(self) -> None:
@@ -40,10 +42,16 @@ class SessionStore:
                     is_temp INTEGER NOT NULL DEFAULT 0,
                     temp_path TEXT,
                     history TEXT NOT NULL DEFAULT '[]',
-                    created_at REAL NOT NULL
+                    created_at REAL NOT NULL,
+                    last_accessed_at REAL
                 )
                 """
             )
+            # Migrate existing tables missing last_accessed_at column
+            columns = [col[1] for col in self._conn.execute("PRAGMA table_info(sessions)").fetchall()]
+            if "last_accessed_at" not in columns:
+                self._conn.execute("ALTER TABLE sessions ADD COLUMN last_accessed_at REAL")
+                self._conn.execute("UPDATE sessions SET last_accessed_at = created_at WHERE last_accessed_at IS NULL")
             self._conn.commit()
 
     def _build_session(self, root_path: Path, is_temp: bool, temp_path: Optional[str], history: Any) -> Dict[str, Any]:
@@ -79,7 +87,7 @@ class SessionStore:
             old_temp = Path(existing["temp_path"])
             if old_temp.exists():
                 try:
-                    shutil.rmtree(old_temp)
+                    shutil.rmtree(old_temp, ignore_errors=True)
                 except OSError:
                     pass
 
@@ -89,12 +97,13 @@ class SessionStore:
             str(temp_path) if temp_path else None,
             history or [],
         )
+        now = time.time()
         with self._lock:
             self._conn.execute(
                 """
                 INSERT OR REPLACE INTO sessions
-                    (session_id, root_path, is_temp, temp_path, history, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (session_id, root_path, is_temp, temp_path, history, created_at, last_accessed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -102,7 +111,8 @@ class SessionStore:
                     int(is_temp),
                     str(temp_path) if temp_path else None,
                     json.dumps(session["history"]),
-                    time.time(),
+                    now,
+                    now,
                 ),
             )
             self._conn.commit()
@@ -110,16 +120,23 @@ class SessionStore:
         return session
 
     def get(self, session_id: str) -> Optional[Dict[str, Any]]:
+        now = time.time()
         with self._lock:
-            if session_id in self._cache:
-                return self._cache[session_id]
-            row = self._conn.execute(
-                "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
-            ).fetchone()
-            if row is None:
-                return None
-            session = self._row_to_session(row)
-            self._cache[session_id] = session
+            session = self._cache.get(session_id)
+            if session is None:
+                row = self._conn.execute(
+                    "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
+                ).fetchone()
+                if row is None:
+                    return None
+                session = self._row_to_session(row)
+                self._cache[session_id] = session
+
+            self._conn.execute(
+                "UPDATE sessions SET last_accessed_at = ? WHERE session_id = ?",
+                (now, session_id),
+            )
+            self._conn.commit()
             return session
 
     def pop(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -135,12 +152,13 @@ class SessionStore:
             return self._row_to_session(row)
 
     def update_history(self, session_id: str, history: list) -> None:
+        now = time.time()
         with self._lock:
             if session_id in self._cache:
                 self._cache[session_id]["history"] = history
             self._conn.execute(
-                "UPDATE sessions SET history = ? WHERE session_id = ?",
-                (json.dumps(history), session_id),
+                "UPDATE sessions SET history = ?, last_accessed_at = ? WHERE session_id = ?",
+                (json.dumps(history), now, session_id),
             )
             self._conn.commit()
 
@@ -157,27 +175,27 @@ class SessionStore:
         """Drop rows whose temp clone is gone and remove stale leftover clones.
 
         Only temp directories older than ``SESSION_ORPHAN_MAX_AGE_SECONDS``
-        (default 3600) are deleted, so a concurrently running instance's fresh
-        clones are never removed.
+        (default 3600) based on last activity are deleted, so actively used
+        sessions are never removed.
         """
         max_age = int(os.getenv("SESSION_ORPHAN_MAX_AGE_SECONDS", "3600"))
         cutoff = time.time() - max_age
 
         with self._lock:
             rows = self._conn.execute(
-                "SELECT session_id, temp_path, created_at FROM sessions WHERE is_temp = 1"
+                "SELECT session_id, temp_path, created_at, last_accessed_at FROM sessions WHERE is_temp = 1"
             ).fetchall()
             live_temp_paths = set()
             stale_ids = []
             for row in rows:
                 temp_path = row["temp_path"]
-                created_at = row["created_at"]
+                activity_time = row["last_accessed_at"] if row["last_accessed_at"] is not None else row["created_at"]
                 if not temp_path or not Path(temp_path).exists():
                     stale_ids.append(row["session_id"])
-                elif created_at < cutoff:
+                elif activity_time < cutoff:
                     stale_ids.append(row["session_id"])
                     try:
-                        shutil.rmtree(temp_path)
+                        shutil.rmtree(temp_path, ignore_errors=True)
                     except OSError:
                         pass
                 else:
@@ -202,8 +220,16 @@ class SessionStore:
                     continue
                 if candidate.stat().st_mtime > cutoff:
                     continue
-                shutil.rmtree(candidate)
+                shutil.rmtree(candidate, ignore_errors=True)
             except OSError:
+                pass
+
+    def close(self) -> None:
+        with self._lock:
+            self._cache.clear()
+            try:
+                self._conn.close()
+            except Exception:
                 pass
 
 

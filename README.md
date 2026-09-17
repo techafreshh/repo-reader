@@ -53,8 +53,9 @@ All settings are read from environment variables (see `.env.example`):
 | `SESSION_ORPHAN_MAX_AGE_SECONDS` | `3600` | Age after which untracked temp repo clones are cleaned up on startup. |
 | `CORS_ALLOW_ORIGINS` | `*` | Comma-separated allowed origins. When `*`, credentials are disabled. |
 | `MAX_MESSAGES_PER_HOUR` | `20` | Per-IP/per-session chat rate limit. |
+| `MAX_REPO_INITS_PER_HOUR` | `10` | Per-IP repository initialization rate limit. |
 | `RATE_LIMIT_WINDOW_SECONDS` | `3600` | Rate limit window. |
-| `MAX_REPO_FILES` | `100` | Maximum files in an analyzed repository. |
+| `MAX_REPO_FILES` | `200` | Maximum files in an analyzed repository. |
 | `MAX_REPO_SIZE_MB` | `50.0` | Maximum total repository size. |
 | `LANGFUSE_*` | — | Optional Langfuse observability keys. |
 
