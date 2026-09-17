@@ -9,6 +9,13 @@ import { WebhookSettings } from './WebhookSettings';
 import { Sidebar } from '../Sidebar';
 import { Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useFileViewer } from '@/hooks/useFileViewer';
+import { CodeViewerPane } from '@/components/viewer/CodeViewerPane';
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from '@/components/ui/resizable';
 
 export function ChatContainer() {
   const {
@@ -37,6 +44,22 @@ export function ChatContainer() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  const {
+    tabs,
+    activeTab,
+    activeTabPath,
+    isOpen: isViewerOpen,
+    openFile,
+    closeTab,
+    closeAllTabs,
+    setIsOpen: setIsViewerOpen,
+    toggleOpen: toggleViewer,
+  } = useFileViewer({
+    apiUrl: webhookConfig.url,
+    sessionId,
+    cacheKey: treeVersion,
+  });
+
   const toggleSidebar = () => {
     setIsSidebarOpen((prev) => !prev);
   };
@@ -52,9 +75,104 @@ export function ChatContainer() {
     }
   }, [messages]);
 
+  const renderChatArea = () => (
+    <div className="flex flex-1 flex-col h-full overflow-hidden">
+      <ChatHeader
+        isConnected={webhookConfig.isConnected}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onClearChat={clearMessages}
+        messagesCount={messages.length}
+        isStreamingEnabled={isStreamingEnabled}
+        onToggleStreaming={toggleStreaming}
+        onToggleSidebar={toggleSidebar}
+        isSidebarOpen={isSidebarOpen}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        isExternal={webhookConfig.isExternal}
+        appName={appName}
+        appLogoUrl={appLogoUrl}
+        openTabsCount={tabs.length}
+        isViewerOpen={isViewerOpen}
+        onToggleViewer={toggleViewer}
+      />
+
+      {/* Messages area */}
+      <main
+        ref={scrollContainerRef}
+        className={cn(
+          "flex-1 overflow-y-auto",
+          messages.length === 0 && "flex items-center justify-center pb-64"
+        )}
+      >
+        {messages.length === 0 ? (
+          <div className="w-full max-w-3xl flex flex-col items-center px-4">
+            <EmptyState 
+              onOpenSettings={() => setIsSettingsOpen(true)} 
+              isExternal={webhookConfig.isExternal} 
+              appName={appName}
+              appDescription={appDescription}
+              appLogoUrl={appLogoUrl}
+            />
+            <div className="w-full mt-4">
+              <ChatInput
+                onSend={sendMessage}
+                isLoading={isLoading}
+                isConnected={webhookConfig.isConnected}
+                messages={messages}
+                isStreamingEnabled={isStreamingEnabled}
+                onStopStreaming={stopStreaming}
+                onUpload={uploadFile}
+                hasUploadConfig={hasUploadConfig}
+                transparent
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="mx-auto max-w-3xl py-4 px-4">
+            {messages.map((message, index) => (
+              <ChatMessage
+                key={message.id}
+                message={message}
+                onRetry={
+                  message.status === 'error' && index === messages.length - 1
+                    ? retryLastMessage
+                    : undefined
+                }
+              />
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
+      </main>
+
+      {messages.length > 0 && (
+        <ChatInput
+          onSend={sendMessage}
+          isLoading={isLoading}
+          isConnected={webhookConfig.isConnected}
+          messages={messages}
+          isStreamingEnabled={isStreamingEnabled}
+          onStopStreaming={stopStreaming}
+          onUpload={uploadFile}
+          hasUploadConfig={hasUploadConfig}
+        />
+      )}
+
+      <WebhookSettings
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        webhookUrl={webhookConfig.url}
+        onUpdateUrl={updateWebhookUrl}
+      />
+    </div>
+  );
+
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex h-screen bg-background" style={theme === 'deep-dark' ? { '--background': '60 2% 12%' } as React.CSSProperties : undefined}>
+      <div
+        className="flex h-screen bg-background"
+        style={theme === 'deep-dark' ? { '--background': '60 2% 12%' } as React.CSSProperties : undefined}
+      >
         <div
           className={cn(
             'border-r border-border transition-all duration-300 ease-in-out',
@@ -66,88 +184,37 @@ export function ChatContainer() {
             webhookConfig={webhookConfig}
             sessionId={sessionId}
             treeVersion={treeVersion}
-            onFileClick={(path) => sendMessage(`Explain the file: ${path}`)}
+            onFileClick={openFile}
+            activeFilePath={activeTabPath}
           />
         </div>
-        <div className="flex flex-1 flex-col">
-          <ChatHeader
-            isConnected={webhookConfig.isConnected}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-            onClearChat={clearMessages}
-            messagesCount={messages.length}
-            isStreamingEnabled={isStreamingEnabled}
-            onToggleStreaming={toggleStreaming}
-            onToggleSidebar={toggleSidebar}
-            isSidebarOpen={isSidebarOpen}
-            theme={theme}
-            onToggleTheme={toggleTheme}
-            isExternal={webhookConfig.isExternal}
-            appName={appName}
-            appLogoUrl={appLogoUrl}
-          />
 
-          {/* Messages area */}
-          <main ref={scrollContainerRef} className={cn("flex-1 overflow-y-auto", messages.length === 0 && "flex items-center justify-center pb-64")}>
-            {messages.length === 0 ? (
-              <div className="w-full max-w-3xl flex flex-col items-center">
-                <EmptyState 
-                  onOpenSettings={() => setIsSettingsOpen(true)} 
-                  isExternal={webhookConfig.isExternal} 
-                  appName={appName}
-                  appDescription={appDescription}
-                  appLogoUrl={appLogoUrl}
+        <div className="flex flex-1 overflow-hidden">
+          {/* The panel group and chat panel must stay mounted regardless of the
+              viewer state — swapping tree positions would remount the chat area
+              and discard the input draft and scroll position. */}
+          <ResizablePanelGroup direction="horizontal" className="flex-1 h-full">
+            <ResizablePanel defaultSize={100} minSize={30} className="h-full">
+              {renderChatArea()}
+            </ResizablePanel>
+
+            {isViewerOpen && tabs.length > 0 && <ResizableHandle withHandle />}
+
+            {isViewerOpen && tabs.length > 0 && (
+              <ResizablePanel defaultSize={50} minSize={25} maxSize={75} className="h-full">
+                <CodeViewerPane
+                  tabs={tabs}
+                  activeTab={activeTab}
+                  onSelectTab={openFile}
+                  onCloseTab={closeTab}
+                  onCloseAll={closeAllTabs}
+                  onClosePane={() => setIsViewerOpen(false)}
+                  onAskAi={(prompt) => sendMessage(prompt)}
+                  onReloadTab={(path) => openFile(path)}
                 />
-                <div className="w-full mt-4">
-                  <ChatInput
-                    onSend={sendMessage}
-                    isLoading={isLoading}
-                    isConnected={webhookConfig.isConnected}
-                    messages={messages}
-                    isStreamingEnabled={isStreamingEnabled}
-                    onStopStreaming={stopStreaming}
-                    onUpload={uploadFile}
-                    hasUploadConfig={hasUploadConfig}
-                    transparent
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="mx-auto max-w-3xl py-4">
-                {messages.map((message, index) => (
-                  <ChatMessage
-                    key={message.id}
-                    message={message}
-                    onRetry={
-                      message.status === 'error' && index === messages.length - 1
-                        ? retryLastMessage
-                        : undefined
-                    }
-                  />
-                ))}
-                <div ref={messagesEndRef} />
-              </div>
+              </ResizablePanel>
             )}
-          </main>
-
-          {messages.length > 0 && (
-            <ChatInput
-              onSend={sendMessage}
-              isLoading={isLoading}
-              isConnected={webhookConfig.isConnected}
-              messages={messages}
-              isStreamingEnabled={isStreamingEnabled}
-              onStopStreaming={stopStreaming}
-              onUpload={uploadFile}
-              hasUploadConfig={hasUploadConfig}
-            />
-          )}
-
-          <WebhookSettings
-            isOpen={isSettingsOpen}
-            onClose={() => setIsSettingsOpen(false)}
-            webhookUrl={webhookConfig.url}
-            onUpdateUrl={updateWebhookUrl}
-          />
+          </ResizablePanelGroup>
         </div>
       </div>
     </TooltipProvider>

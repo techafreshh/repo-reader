@@ -72,6 +72,12 @@ export default {
           glow: "hsl(var(--volt-glow))",
           pulse: "hsl(var(--volt-pulse))",
         },
+        // Dark product surfaces from DESIGN.md §colors
+        "surface-dark": "#181715",
+        "surface-dark-deep": "#141311",
+        "surface-dark-elevated": "#252320",
+        "surface-dark-soft": "#1f1e1b",
+        "on-dark": "#faf9f5",
       },
       borderRadius: {
         lg: "var(--radius)",

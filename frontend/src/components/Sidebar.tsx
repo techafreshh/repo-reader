@@ -10,9 +10,17 @@ interface SidebarProps {
   sessionId: string;
   treeVersion?: number;
   onFileClick?: (path: string) => void;
+  activeFilePath?: string | null;
 }
 
-export function Sidebar({ onNewChat, webhookConfig, sessionId, treeVersion, onFileClick }: SidebarProps) {
+export function Sidebar({
+  onNewChat,
+  webhookConfig,
+  sessionId,
+  treeVersion,
+  onFileClick,
+  activeFilePath,
+}: SidebarProps) {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [isLoadingTree, setIsLoadingTree] = useState(false);
   const [treeError, setTreeError] = useState<string | null>(null);
@@ -80,7 +88,7 @@ export function Sidebar({ onNewChat, webhookConfig, sessionId, treeVersion, onFi
                 {treeError}
               </div>
             ) : tree.length > 0 ? (
-              <FileTree tree={tree} onFileClick={onFileClick} />
+              <FileTree tree={tree} onFileClick={onFileClick} activeFilePath={activeFilePath} />
             ) : (
               <div className="px-3 py-2 text-[10px] text-muted-foreground font-mono italic">
                 Send a repo URL to load the tree.

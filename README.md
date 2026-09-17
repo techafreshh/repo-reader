@@ -54,9 +54,11 @@ All settings are read from environment variables (see `.env.example`):
 | `ALLOW_LOCAL_REPO_TARGETS` | `true` | Allow initializing local filesystem paths. Set to `false` in production. |
 | `MAX_MESSAGES_PER_HOUR` | `20` | Per-IP/per-session chat rate limit. |
 | `MAX_REPO_INITS_PER_HOUR` | `10` | Per-IP repository initialization rate limit. |
+| `MAX_FILE_VIEWS_PER_HOUR` | `60` | Per-IP file viewer rate limit (`GET /file`). |
 | `RATE_LIMIT_WINDOW_SECONDS` | `3600` | Rate limit window. |
 | `MAX_REPO_FILES` | `200` | Maximum files in an analyzed repository. |
 | `MAX_REPO_SIZE_MB` | `50.0` | Maximum total repository size. |
+| `MAX_VIEW_FILE_MB` | `5.0` | Maximum size of a file served by the code viewer. |
 | `LANGFUSE_*` | — | Optional Langfuse observability keys. |
 
 ---
