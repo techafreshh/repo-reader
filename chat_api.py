@@ -4,9 +4,8 @@ from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, AliasGenerator
-from pydantic.alias_generators import to_camel
-from typing import List, Dict, Optional, Annotated, Any
+from pydantic import BaseModel
+from typing import Dict, Optional, Annotated
 import uuid
 import shutil
 from pathlib import Path
@@ -63,21 +62,11 @@ class InitializeResponse(BaseModel):
     session_id: str
     message: str
 
-class ChatRequest(BaseModel):
-    model_config = ConfigDict(
-        alias_generator=AliasGenerator(
-            validation_alias=to_camel,
-        ),
-        populate_by_name=True,
-    )
-    session_id: str
-    message: str
-    history: Optional[List[Any]] = None
-
 def get_session(session_id: str):
-    if session_id not in store:
+    session = store.get(session_id)
+    if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    return store.get(session_id)
+    return session
 
 SessionDep = Annotated[Dict, Depends(get_session)]
 
@@ -135,7 +124,7 @@ async def get_file_tree(session_id: str):
         entries = []
         try:
             children = sorted(directory.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
-        except PermissionError:
+        except (PermissionError, FileNotFoundError):
             return entries
 
         for child in children:
@@ -167,8 +156,10 @@ async def close_session(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    if session["is_temp"] and session["temp_path"]:
-        shutil.rmtree(session["temp_path"])
+    if session.get("is_temp") and session.get("temp_path"):
+        temp_path = Path(session["temp_path"])
+        if temp_path.exists():
+            shutil.rmtree(temp_path, ignore_errors=True)
     
     return {"message": "Session closed and temporary files cleaned up"}
 

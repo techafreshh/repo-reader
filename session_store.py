@@ -21,6 +21,9 @@ class SessionStore:
 
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path or os.getenv("SESSION_DB_PATH", "sessions.db")
+        db_file = Path(self.db_path)
+        if db_file.parent and str(db_file.parent) != ".":
+            db_file.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -71,6 +74,15 @@ class SessionStore:
         temp_path: Optional[Path] = None,
         history: Optional[list] = None,
     ) -> Dict[str, Any]:
+        existing = self.get(session_id)
+        if existing and existing.get("is_temp") and existing.get("temp_path"):
+            old_temp = Path(existing["temp_path"])
+            if old_temp.exists():
+                try:
+                    shutil.rmtree(old_temp)
+                except OSError:
+                    pass
+
         session = self._build_session(
             Path(root_path),
             is_temp,
@@ -153,16 +165,23 @@ class SessionStore:
 
         with self._lock:
             rows = self._conn.execute(
-                "SELECT session_id, temp_path FROM sessions WHERE is_temp = 1"
+                "SELECT session_id, temp_path, created_at FROM sessions WHERE is_temp = 1"
             ).fetchall()
             live_temp_paths = set()
             stale_ids = []
             for row in rows:
                 temp_path = row["temp_path"]
-                if temp_path and Path(temp_path).exists():
-                    live_temp_paths.add(temp_path)
-                else:
+                created_at = row["created_at"]
+                if not temp_path or not Path(temp_path).exists():
                     stale_ids.append(row["session_id"])
+                elif created_at < cutoff:
+                    stale_ids.append(row["session_id"])
+                    try:
+                        shutil.rmtree(temp_path)
+                    except OSError:
+                        pass
+                else:
+                    live_temp_paths.add(str(Path(temp_path).resolve()))
 
             if stale_ids:
                 self._conn.executemany(
@@ -175,9 +194,12 @@ class SessionStore:
 
         temp_root = Path(tempfile.gettempdir())
         for candidate in temp_root.glob("repo_reader_*"):
-            if not candidate.is_dir() or str(candidate) in live_temp_paths:
+            if not candidate.is_dir():
                 continue
             try:
+                candidate_resolved = str(candidate.resolve())
+                if candidate_resolved in live_temp_paths:
+                    continue
                 if candidate.stat().st_mtime > cutoff:
                     continue
                 shutil.rmtree(candidate)
