@@ -10,7 +10,7 @@ import uuid
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from repo_reader import (
@@ -69,6 +69,7 @@ app.add_middleware(
     allow_credentials=not allow_all_origins,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining"],
 )
 
 @app.exception_handler(RequestValidationError)
@@ -100,6 +101,14 @@ SessionDep = Annotated[Dict, Depends(get_session)]
 rate_limiter = RateLimiter(default_limit=20, default_window_seconds=3600, env_limit_var="MAX_MESSAGES_PER_HOUR")
 repo_init_limiter = RateLimiter(default_limit=10, default_window_seconds=3600, env_limit_var="MAX_REPO_INITS_PER_HOUR")
 file_view_limiter = RateLimiter(default_limit=60, default_window_seconds=3600, env_limit_var="MAX_FILE_VIEWS_PER_HOUR")
+
+
+def _message_quota_headers(client_ip: str) -> Dict[str, str]:
+    """Per-IP message quota surfaced on every /agui response and 429 error."""
+    return {
+        "X-RateLimit-Limit": str(rate_limiter.limit),
+        "X-RateLimit-Remaining": str(rate_limiter.remaining_requests(client_ip)),
+    }
 
 # --- Endpoints ---
 
@@ -276,15 +285,17 @@ async def agui_endpoint(request: Request):
     # Check client IP rate limit
     if rate_limiter.is_rate_limited(client_ip):
         raise HTTPException(
-            status_code=429, 
-            detail=f"Rate limit exceeded. Maximum {rate_limiter.limit} messages per hour."
+            status_code=429,
+            detail=f"Rate limit exceeded. Maximum {rate_limiter.limit} messages per hour.",
+            headers=_message_quota_headers(client_ip),
         )
 
     # Check Session ID rate limit (if present)
     if session_id and rate_limiter.is_rate_limited(session_id):
         raise HTTPException(
-            status_code=429, 
-            detail=f"Rate limit exceeded. Maximum {rate_limiter.limit} messages per hour."
+            status_code=429,
+            detail=f"Rate limit exceeded. Maximum {rate_limiter.limit} messages per hour.",
+            headers=_message_quota_headers(client_ip),
         )
 
     # Correlate OpenTelemetry/Langfuse traces with user session ID
@@ -299,12 +310,15 @@ async def agui_endpoint(request: Request):
             print(f"[DEBUG] Failed to initialize propagate_attributes: {e}")
 
     with context_manager:
-        return await AGUIAdapter.dispatch_request(
+        response = await AGUIAdapter.dispatch_request(
             request,
             agent=agent,
             deps=StateDeps(AgentState(session_id=session_id or "")),
             usage_limits=UsageLimits(request_limit=AGENT_REQUEST_LIMIT),
         )
+        if isinstance(response, Response):
+            response.headers.update(_message_quota_headers(client_ip))
+        return response
 
 
 

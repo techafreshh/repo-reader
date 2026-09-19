@@ -27,6 +27,11 @@ export interface WebhookConfig {
   isExternal?: boolean;
 }
 
+export interface QuotaState {
+  remaining: number;
+  limit: number;
+}
+
 export interface ChatState {
   messages: Message[];
   isLoading: boolean;

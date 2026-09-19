@@ -36,6 +36,7 @@ export function ChatContainer() {
     appLogoUrl,
     sessionId,
     treeVersion,
+    quota,
   } = useChat();
   const { theme, toggleTheme } = useTheme();
 
@@ -123,6 +124,7 @@ export function ChatContainer() {
                 onStopStreaming={stopStreaming}
                 onUpload={uploadFile}
                 hasUploadConfig={hasUploadConfig}
+                quota={quota}
                 transparent
               />
             </div>
@@ -155,6 +157,7 @@ export function ChatContainer() {
           onStopStreaming={stopStreaming}
           onUpload={uploadFile}
           hasUploadConfig={hasUploadConfig}
+          quota={quota}
         />
       )}
 

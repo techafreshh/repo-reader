@@ -1,8 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { HttpAgent, EventType } from '@ag-ui/client';
 import type { BaseEvent } from '@ag-ui/core';
-import type { Message, ToolCall, WebhookConfig } from '@/types/chat';
-import { friendlyRunErrorMessage } from '@/lib/agentErrors';
+import type { Message, ToolCall, WebhookConfig, QuotaState } from '@/types/chat';
+import { friendlyRunErrorMessage, friendlyStreamErrorMessage } from '@/lib/agentErrors';
+import { parseQuotaHeaders } from '@/lib/quota';
 
 interface AgUiEventPayload {
   toolCallName?: string;
@@ -37,6 +38,7 @@ export function useChat() {
     isExternal: !!ENV_API_BASE_URL,
   });
   const [isStreamingEnabled, setIsStreamingEnabled] = useState(true);
+  const [quota, setQuota] = useState<QuotaState | null>(null);
   const [sessionId, setSessionId] = useState<string>(() => {
     let savedSessionId = sessionStorage.getItem(SESSION_ID_STORAGE_KEY);
     if (!savedSessionId) {
@@ -104,6 +106,7 @@ export function useChat() {
       isConnected: trimmedUrl.length > 0,
       isExternal: false,
     });
+    setQuota(null);
     clearMessages();
   }, [clearMessages, ENV_API_BASE_URL]);
 
@@ -203,11 +206,19 @@ export function useChat() {
       }
 
       try {
+        // Intercept the AG-UI request to read the per-IP quota headers the
+        // backend sets on every /agui response (success and 429 alike).
+        const fetchWithQuota: typeof window.fetch = async (input, init) => {
+          const response = await window.fetch(input, init);
+          setQuota(parseQuotaHeaders(response.headers));
+          return response;
+        };
+
         const agent = new HttpAgent({
           url: `${webhookConfig.url}/agui`,
           threadId: sessionId,
           initialState: { session_id: sessionId },
-          fetch: window.fetch.bind(window),
+          fetch: fetchWithQuota,
         });
 
         // Build AG-UI messages from our message history
@@ -398,7 +409,7 @@ export function useChat() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantMessageId
-                  ? { ...m, content: `Error: ${err.message}`, status: 'error' }
+                  ? { ...m, content: friendlyStreamErrorMessage(err), status: 'error' }
                   : m
               )
             );
@@ -514,6 +525,7 @@ export function useChat() {
     appLogoUrl: ENV_APP_LOGO_URL,
     sessionId,
     treeVersion,
+    quota,
   };
 }
 

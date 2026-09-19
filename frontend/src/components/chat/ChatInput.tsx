@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, KeyboardEvent } from 'react';
 import { Send, StopCircle, Plus, Paperclip, Scan, Camera, Image, Lightbulb, Telescope, Globe, MoreHorizontal, ChevronRight, ArrowUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
-import { Message } from '@/types/chat';
+import { Message, QuotaState } from '@/types/chat';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +21,7 @@ interface ChatInputProps {
   onStopStreaming: () => void;
   onUpload?: (file: File) => Promise<{ success: boolean; message?: string }>;
   hasUploadConfig?: boolean;
+  quota?: QuotaState | null;
   transparent?: boolean;
 }
 
@@ -32,6 +34,7 @@ export function ChatInput({
   onStopStreaming,
   onUpload,
   hasUploadConfig,
+  quota,
   transparent,
 }: ChatInputProps) {
   const [input, setInput] = useState('');
@@ -239,17 +242,31 @@ export function ChatInput({
           )}
         </div>
 
-        {/* Keyboard hint */}
-        <div className="mt-2 flex items-center justify-between gap-1 text-[10px] text-muted-foreground/50 font-mono">
+        {/* Keyboard hint + message quota */}
+        <div className="mt-2 flex items-center justify-between gap-3 text-[10px] text-muted-foreground/50 font-mono">
           <div>
             <span className="font-bold">↑↓</span> to browse history
           </div>
-          <div className="flex items-center gap-1">
-            <span className="font-bold">Enter</span>
-            <span>to send</span>
-            <span className="mx-1">•</span>
-            <span className="font-bold">Shift+Enter</span>
-            <span>for newline</span>
+          <div className="flex items-center gap-3">
+            {quota && (
+              <div className="flex items-center gap-1.5" title="Messages remaining this hour">
+                <Progress
+                  value={(quota.remaining / quota.limit) * 100}
+                  className="h-1 w-14"
+                  aria-label="Messages remaining this hour"
+                />
+                <span className={cn('whitespace-nowrap', quota.remaining === 0 && 'text-destructive')}>
+                  {quota.remaining}/{quota.limit} left
+                </span>
+              </div>
+            )}
+            <div className="flex items-center gap-1">
+              <span className="font-bold">Enter</span>
+              <span>to send</span>
+              <span className="mx-1">•</span>
+              <span className="font-bold">Shift+Enter</span>
+              <span>for newline</span>
+            </div>
           </div>
         </div>
       </div>
