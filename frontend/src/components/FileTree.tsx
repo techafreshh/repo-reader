@@ -1,6 +1,10 @@
-import { useState } from 'react';
-import { ChevronRight, ChevronDown, Folder, FolderOpen, FileText } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useEffect, useMemo, useState } from 'react';
+import { FileText } from 'lucide-react';
+import {
+  FileTree as MotionFileTree,
+  FileTreeFile,
+  FileTreeFolder,
+} from '@/components/motion/file-tree';
 
 export interface TreeNode {
   name: string;
@@ -15,80 +19,47 @@ interface FileTreeProps {
   activeFilePath?: string | null;
 }
 
-interface TreeItemProps {
-  node: TreeNode;
-  depth: number;
-  onFileClick?: (path: string) => void;
-  activeFilePath?: string | null;
+function collectDirPaths(nodes: TreeNode[], into: Set<string>): Set<string> {
+  for (const node of nodes) {
+    if (node.type === 'directory') {
+      into.add(node.path);
+      if (node.children) collectDirPaths(node.children, into);
+    }
+  }
+  return into;
 }
 
-function TreeItem({ node, depth, onFileClick, activeFilePath }: TreeItemProps) {
-  const [isOpen, setIsOpen] = useState(depth < 1);
-  const isDir = node.type === 'directory';
+function topDirPaths(nodes: TreeNode[]): string[] {
+  return nodes.filter((n) => n.type === 'directory').map((n) => n.path);
+}
 
-  const handleClick = () => {
-    if (isDir) {
-      setIsOpen((prev) => !prev);
-    } else if (onFileClick) {
-      onFileClick(node.path);
-    }
-  };
-
-  const isActive = !isDir && activeFilePath === node.path;
-
-  return (
-    <div>
-      <button
-        onClick={handleClick}
-        className={cn(
-          'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] font-mono transition-colors',
-          isActive
-            ? 'bg-primary/20 text-primary font-medium'
-            : 'hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
-          isDir ? 'text-sidebar-foreground' : isActive ? 'text-primary' : 'text-muted-foreground',
-        )}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
-      >
-        {isDir ? (
-          <>
-            {isOpen ? (
-              <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-            )}
-            {isOpen ? (
-              <FolderOpen className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
-            ) : (
-              <Folder className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
-            )}
-          </>
-        ) : (
-          <>
-            <span className="w-3 flex-shrink-0" />
-            <FileText className={cn("h-3.5 w-3.5 flex-shrink-0", isActive ? "text-primary" : "text-muted-foreground")} />
-          </>
-        )}
-        <span className="truncate">{node.name}</span>
-      </button>
-
-      {isDir && isOpen && node.children && (
-        <div>
-          {node.children.map((child) => (
-            <TreeItem
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              onFileClick={onFileClick}
-              activeFilePath={activeFilePath}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+function renderNodes(nodes: TreeNode[]) {
+  return nodes.map((node) =>
+    node.type === 'directory' ? (
+      <FileTreeFolder key={node.path} value={node.path} name={node.name}>
+        {node.children?.length ? renderNodes(node.children) : null}
+      </FileTreeFolder>
+    ) : (
+      <FileTreeFile
+        key={node.path}
+        value={node.path}
+        name={node.name}
+        icon={<FileText className="size-4" />}
+      />
+    ),
   );
 }
 
 export function FileTree({ tree, onFileClick, activeFilePath }: FileTreeProps) {
+  const dirPaths = useMemo(() => collectDirPaths(tree, new Set()), [tree]);
+  // Expand top-level folders on first load; re-expand them when a new tree
+  // (session) replaces the current one.
+  const [expandedIds, setExpandedIds] = useState<string[]>(() => topDirPaths(tree));
+
+  useEffect(() => {
+    setExpandedIds(topDirPaths(tree));
+  }, [tree]);
+
   if (tree.length === 0) {
     return (
       <div className="px-3 py-2 text-[10px] text-muted-foreground font-mono italic">
@@ -98,16 +69,23 @@ export function FileTree({ tree, onFileClick, activeFilePath }: FileTreeProps) {
   }
 
   return (
-    <div className="space-y-0.5">
-      {tree.map((node) => (
-        <TreeItem
-          key={node.path}
-          node={node}
-          depth={0}
-          onFileClick={onFileClick}
-          activeFilePath={activeFilePath}
-        />
-      ))}
-    </div>
+    <MotionFileTree
+      value={activeFilePath ?? null}
+      onValueChange={(value) => {
+        // Folder rows toggle their own expansion; only files open the viewer.
+        if (!dirPaths.has(value)) onFileClick?.(value);
+      }}
+      expandedIds={expandedIds}
+      onExpandedChange={setExpandedIds}
+      ariaLabel="Repository files"
+      classNames={{
+        // The gliding pill from FileTree carries the selected look; keep the
+        // row itself transparent so the two don't double-paint.
+        item: 'rounded-md aria-selected:bg-transparent aria-selected:text-foreground',
+        label: 'font-mono text-[11px]',
+      }}
+    >
+      {renderNodes(tree)}
+    </MotionFileTree>
   );
 }

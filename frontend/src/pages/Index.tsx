@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-serif'; // Note: react-router-dom Link is used instead
 import { Link as RouterLink } from 'react-router-dom';
 import { 
   BookOpen, 

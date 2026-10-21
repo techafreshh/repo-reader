@@ -10,17 +10,20 @@ import {
   FileCode,
   Sparkles,
   ChevronRight,
-  Loader2,
   AlertCircle,
   PanelRightClose,
   RotateCcw,
 } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { Tabs, TabsList, TabsTrigger } from '@/components/motion/tabs';
+import { Loader } from '@/components/motion/loader';
+import { EASE_OUT } from '@/lib/ease';
 import { cn } from '@/lib/utils';
 import type { FileTab } from '@/hooks/useFileViewer';
 
@@ -130,6 +133,7 @@ export function CodeViewerPane({
   onReloadTab,
 }: CodeViewerPaneProps) {
   const [copied, setCopied] = useState(false);
+  const reduce = useReducedMotion() ?? false;
 
   const handleCopy = () => {
     if (!activeTab?.content) return;
@@ -156,49 +160,48 @@ export function CodeViewerPane({
 
   return (
     <div className="flex h-full flex-col bg-surface-dark text-on-dark border-l border-surface-dark-elevated font-sans select-text">
-      {/* 1. Tab Bar */}
-      <div className="flex items-center justify-between border-b border-surface-dark-elevated bg-surface-dark-deep px-2 pt-1">
-        <div role="tablist" className="flex items-center space-x-1 overflow-x-auto no-scrollbar scroll-smooth flex-1 pr-2">
-          {tabs.map((tab) => {
-            const isActive = tab.path === activeTab?.path;
-            return (
-              <div
-                key={tab.path}
-                role="tab"
-                aria-selected={isActive}
-                tabIndex={0}
-                onClick={() => onSelectTab(tab.path)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onSelectTab(tab.path);
-                  }
-                }}
-                className={cn(
-                  'group flex items-center gap-2 rounded-t-md px-3 py-1.5 text-xs font-mono transition-all cursor-pointer border-t border-x select-none flex-shrink-0 max-w-[200px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
-                  isActive
-                    ? 'bg-surface-dark border-surface-dark-elevated border-b-transparent text-white font-medium shadow-sm'
-                    : 'bg-surface-dark-deep border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-surface-dark/60'
-                )}
-                title={tab.path}
-              >
-                <div className="flex-shrink-0 flex items-center justify-center w-3.5 h-3.5">
-                  {getFileIcon(tab.name)}
-                </div>
-                <span className="truncate">{tab.name}</span>
-                <button
-                  type="button"
-                  onClick={(e) => onCloseTab(tab.path, e)}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  className="ml-1 p-0.5 rounded-sm opacity-60 hover:opacity-100 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-opacity"
-                  title="Close tab"
+      {/* 1. Tab Bar — spring pill indicator glides between tabs */}
+      <div className="flex items-center justify-between border-b border-surface-dark-elevated bg-surface-dark-deep px-2 pt-1.5">
+        <Tabs
+          value={activeTab?.path ?? ''}
+          onValueChange={(value) => onSelectTab(value)}
+          variant="segment"
+          className="flex-1 min-w-0"
+        >
+          <TabsList
+            wrapperClassName="justify-start"
+            className="rounded-lg bg-surface-dark/80 p-0.5 w-max max-w-full"
+          >
+            {tabs.map((tab) => {
+              return (
+                <TabsTrigger
+                  key={tab.path}
+                  value={tab.path}
+                  icon={getFileIcon(tab.name)}
+                  title={tab.path}
+                  className="max-w-[200px] px-2.5 py-1 font-mono text-[11px] text-zinc-400 hover:text-zinc-200"
                 >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
+                  <span className="max-w-[140px] truncate">{tab.name}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      // Keep the close click from also selecting the tab.
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onCloseTab(tab.path, e);
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    className="ml-1 rounded-sm p-0.5 text-zinc-400 opacity-60 hover:bg-zinc-800 hover:text-white hover:opacity-100 transition-opacity"
+                    title="Close tab"
+                    aria-label={`Close ${tab.name}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </Tabs>
 
         {/* Global Controls */}
         <div className="flex items-center gap-1 pb-1">
@@ -303,8 +306,15 @@ export function CodeViewerPane({
         </div>
       )}
 
-      {/* 3. Code Content Area */}
+      {/* 3. Code Content Area — content cross-fades as tabs change */}
       <div className="flex-1 overflow-auto bg-surface-dark p-0 relative">
+        <motion.div
+          key={activeTab?.path ?? 'empty'}
+          initial={reduce ? false : { opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18, ease: EASE_OUT }}
+          className="flex h-full min-h-full flex-col"
+        >
         {!activeTab ? (
           <div className="flex h-full flex-col items-center justify-center p-8 text-center text-zinc-500 font-mono text-xs">
             <Code className="h-10 w-10 text-zinc-700 mb-3" />
@@ -315,7 +325,7 @@ export function CodeViewerPane({
           </div>
         ) : activeTab.isLoading ? (
           <div className="flex h-full flex-col items-center justify-center p-8 text-center text-zinc-400 font-mono text-xs gap-3">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <Loader variant="spinner" size={24} speed={0.9} label={`Loading ${activeTab.name}`} className="text-primary" />
             <span>Loading {activeTab.name}...</span>
           </div>
         ) : activeTab.error ? (
@@ -369,6 +379,7 @@ export function CodeViewerPane({
             </SyntaxHighlighter>
           </div>
         )}
+        </motion.div>
       </div>
     </div>
   );

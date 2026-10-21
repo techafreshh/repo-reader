@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { PlusCircle, Link, FolderTree, Loader2 } from 'lucide-react';
+import { PlusCircle, Link, FolderTree } from 'lucide-react';
+import { Button } from '@/components/motion/button';
+import { Loader } from '@/components/motion/loader';
 import { WebhookConfig } from '@/types/chat';
 import { FileTree, TreeNode } from './FileTree';
 
@@ -63,7 +64,10 @@ export function Sidebar({
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground p-3">
       {/* New Chat */}
       <div className="mb-4">
-        <Button onClick={onNewChat} className="w-full justify-start gap-2">
+        <Button
+          onClick={onNewChat}
+          className="h-9 w-full justify-start gap-2 rounded-md px-3 text-sm"
+        >
           <PlusCircle className="h-4 w-4" />
           New Chat
         </Button>
@@ -80,7 +84,7 @@ export function Sidebar({
 
             {isLoadingTree ? (
               <div className="flex items-center gap-2 px-3 py-2 text-[10px] text-muted-foreground font-mono">
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <Loader variant="dots" size={4} speed={0.9} label="Loading tree" className="text-muted-foreground" />
                 Loading tree...
               </div>
             ) : treeError ? (

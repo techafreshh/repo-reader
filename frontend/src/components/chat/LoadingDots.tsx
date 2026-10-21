@@ -1,9 +1,11 @@
-import React from 'react';
+import { Loader } from '@/components/motion/loader';
 
 export const LoadingDots = () => (
-  <div className="flex items-center gap-1">
-    <span className="h-2 w-2 rounded-full bg-muted-foreground loading-dot" />
-    <span className="h-2 w-2 rounded-full bg-muted-foreground loading-dot" />
-    <span className="h-2 w-2 rounded-full bg-muted-foreground loading-dot" />
-  </div>
+  <Loader
+    variant="dots"
+    size={6}
+    speed={0.9}
+    label="Responding"
+    className="text-muted-foreground"
+  />
 );

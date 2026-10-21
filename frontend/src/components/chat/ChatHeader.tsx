@@ -1,5 +1,6 @@
-import { Zap, Settings, Trash2, PanelLeft, PanelLeftClose, Sun, Moon, Palette, Code, PanelRight, PanelRightClose } from 'lucide-react';
+import { Zap, Settings, Trash2, PanelLeft, PanelLeftClose, Sun, Moon, Code, PanelRight, PanelRightClose } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ActionSwapIcon } from '@/components/motion/action-swap';
 import {
   Tooltip,
   TooltipContent,
@@ -159,11 +160,19 @@ export function ChatHeader({
               onClick={onToggleTheme}
               className="h-8 w-8 text-muted-foreground hover:text-primary"
             >
-              {theme === 'deep-dark' ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
+              {/* Sun and moon blur-swap while the page repaints through the
+                  View Transition API */}
+              <ActionSwapIcon
+                value={theme}
+                animation="blur"
+                className="h-4 w-4"
+              >
+                {theme === 'deep-dark' ? (
+                  <Sun className="h-4 w-4" />
+                ) : (
+                  <Moon className="h-4 w-4" />
+                )}
+              </ActionSwapIcon>
               <span className="sr-only">Toggle theme</span>
             </Button>
           </TooltipTrigger>

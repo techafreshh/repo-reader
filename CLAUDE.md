@@ -34,6 +34,9 @@ frontend/src/components/chat/*       chat UI
 frontend/src/components/Sidebar.tsx  file tree + connection info
 frontend/src/types/chat.ts           shared types
 frontend/src/components/ui/*         shadcn/ui primitives (do not hand-edit)
+frontend/src/components/motion/*     beUI animated components, vendored from
+                                     beui.dev via the shadcn registry
+                                     (@beui — see components.json)
 ```
 
 ## Commands
@@ -87,3 +90,9 @@ There is no backend pytest suite; verify imports with
   filesystem work (rmtree) outside it.
 - CORS `allow_credentials` is only enabled when explicit origins are set; `*`
   disables credentials by design.
+- `frontend/src/components/{motion,agents}` are vendored beUI source (Motion
+  for React + Tailwind). They carry small React-18 compatibility patches
+  (refs, `inert`) recorded in `src/vite-env.d.ts`; prefer minimal diffs when
+  updating them from the registry. Both lockfiles must stay in sync — the
+  Docker build runs `npm ci`, so new deps need `package-lock.json` updated
+  even when the shadcn CLI only touches `bun.lockb`.

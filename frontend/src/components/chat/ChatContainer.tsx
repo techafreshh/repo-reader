@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useChat } from '@/hooks/useChat';
 import { useTheme } from '@/hooks/useTheme';
@@ -7,10 +7,13 @@ import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { WebhookSettings } from './WebhookSettings';
 import { Sidebar } from '../Sidebar';
-import { Zap } from 'lucide-react';
+import { Zap, ArrowDown } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { SPRING_PRESS, EASE_OUT } from '@/lib/ease';
 import { cn } from '@/lib/utils';
 import { useFileViewer } from '@/hooks/useFileViewer';
 import { CodeViewerPane } from '@/components/viewer/CodeViewerPane';
+import { MessageScroller } from '@/components/agents/message-scroller';
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -42,8 +45,9 @@ export function ChatContainer() {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isAtLiveEdge, setIsAtLiveEdge] = useState(true);
+  const viewportRef = useRef<HTMLElement>(null);
+  const reduce = useReducedMotion() ?? false;
 
   const {
     tabs,
@@ -65,19 +69,8 @@ export function ChatContainer() {
     setIsSidebarOpen((prev) => !prev);
   };
 
-  // Auto-scroll to bottom on new messages, but only if user is near the bottom
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (container) {
-      const isNearBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 200;
-      if (isNearBottom) {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }
-    }
-  }, [messages]);
-
   const renderChatArea = () => (
-    <div className="flex flex-1 flex-col h-full overflow-hidden">
+    <div className="relative flex flex-1 flex-col h-full overflow-hidden">
       <ChatHeader
         isConnected={webhookConfig.isConnected}
         onOpenSettings={() => setIsSettingsOpen(true)}
@@ -97,19 +90,14 @@ export function ChatContainer() {
         onToggleViewer={toggleViewer}
       />
 
-      {/* Messages area */}
-      <main
-        ref={scrollContainerRef}
-        className={cn(
-          "flex-1 overflow-y-auto",
-          messages.length === 0 && "flex items-center justify-center pb-64"
-        )}
-      >
-        {messages.length === 0 ? (
+      {/* Messages area — reader-aware viewport that follows streamed output
+          at the live edge and releases when the reader scrolls away */}
+      {messages.length === 0 ? (
+        <main className="flex-1 flex items-center justify-center pb-64 overflow-hidden">
           <div className="w-full max-w-3xl flex flex-col items-center px-4">
-            <EmptyState 
-              onOpenSettings={() => setIsSettingsOpen(true)} 
-              isExternal={webhookConfig.isExternal} 
+            <EmptyState
+              onOpenSettings={() => setIsSettingsOpen(true)}
+              isExternal={webhookConfig.isExternal}
               appName={appName}
               appDescription={appDescription}
               appLogoUrl={appLogoUrl}
@@ -129,23 +117,58 @@ export function ChatContainer() {
               />
             </div>
           </div>
-        ) : (
-          <div className="mx-auto max-w-3xl py-4 px-4">
-            {messages.map((message, index) => (
-              <ChatMessage
-                key={message.id}
-                message={message}
-                onRetry={
-                  message.status === 'error' && index === messages.length - 1
-                    ? retryLastMessage
-                    : undefined
-                }
-              />
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
+        </main>
+      ) : (
+        <MessageScroller
+          className="flex-1"
+          viewportRef={viewportRef}
+          viewportClassName="flex-1"
+          contentClassName="mx-auto max-w-3xl py-4 px-4 pb-8"
+          followOutput
+          smooth
+          busy={isLoading}
+          label="Conversation"
+          onFollowChange={setIsAtLiveEdge}
+        >
+          {messages.map((message, index) => (
+            <ChatMessage
+              key={message.id}
+              message={message}
+              onRetry={
+                message.status === 'error' && index === messages.length - 1
+                  ? retryLastMessage
+                  : undefined
+              }
+            />
+          ))}
+        </MessageScroller>
+      )}
+
+      {/* Jump back to the live edge when the reader scrolled away */}
+      <AnimatePresence>
+        {!isAtLiveEdge && messages.length > 0 && (
+          <motion.button
+            type="button"
+            initial={{ opacity: 0, y: reduce ? 0 : 10, scale: reduce ? 1 : 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: reduce ? 0 : 10, scale: reduce ? 1 : 0.9 }}
+            transition={SPRING_PRESS}
+            onClick={() => {
+              const viewport = viewportRef.current;
+              if (viewport) {
+                viewport.scrollTo({
+                  top: viewport.scrollHeight,
+                  behavior: reduce ? 'auto' : 'smooth',
+                });
+              }
+            }}
+            className="absolute bottom-24 right-6 z-20 flex h-9 items-center gap-1.5 rounded-full border border-border/60 bg-card px-3.5 text-xs font-medium text-foreground shadow-lg backdrop-blur-sm transition-colors hover:bg-muted"
+          >
+            <ArrowDown className="h-3.5 w-3.5 text-primary" />
+            Jump to latest
+          </motion.button>
         )}
-      </main>
+      </AnimatePresence>
 
       {messages.length > 0 && (
         <ChatInput
@@ -224,15 +247,22 @@ export function ChatContainer() {
   );
 }
 
-function EmptyState({ onOpenSettings, isExternal, appName, appDescription, appLogoUrl }: { 
-  onOpenSettings: () => void; 
+function EmptyState({ onOpenSettings, isExternal, appName, appDescription, appLogoUrl }: {
+  onOpenSettings: () => void;
   isExternal?: boolean;
   appName: string;
   appDescription: string;
   appLogoUrl?: string;
 }) {
+  const reduce = useReducedMotion() ?? false;
+  // One-shot content reveal: short lift with a restrained blur (beUI recipe).
   return (
-    <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+    <motion.div
+      initial={reduce ? false : { opacity: 0, transform: 'translateY(8px)', filter: 'blur(4px)' }}
+      animate={{ opacity: 1, transform: 'translateY(0px)', filter: 'blur(0px)' }}
+      transition={{ duration: 0.22, ease: EASE_OUT }}
+      className="flex h-full flex-col items-center justify-center px-4 text-center"
+    >
       <div className={cn(
         "mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary overflow-hidden",
         appLogoUrl && "p-0 bg-transparent"
@@ -260,6 +290,6 @@ function EmptyState({ onOpenSettings, isExternal, appName, appDescription, appLo
           </button>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

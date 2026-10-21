@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect, KeyboardEvent } from 'react';
-import { Send, StopCircle, Plus, Paperclip, Scan, Camera, Image, Lightbulb, Telescope, Globe, MoreHorizontal, ChevronRight, ArrowUp } from 'lucide-react';
+import { Plus, Paperclip, Scan, Camera, Image, Lightbulb, Telescope, Globe, MoreHorizontal, ChevronRight, ArrowUp, StopCircle } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { ActionSwapButton } from '@/components/motion/action-swap';
+import { SPRING_SWAP } from '@/lib/ease';
 import { cn } from '@/lib/utils';
 import { Message, QuotaState } from '@/types/chat';
 import {
@@ -42,6 +45,8 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const userMessages = messages.filter((m) => m.role === 'user').reverse();
+  const reduce = useReducedMotion() ?? false;
+  const isStop = isLoading && isStreamingEnabled;
 
   // Auto-resize textarea
   useEffect(() => {
@@ -215,31 +220,21 @@ export function ChatInput({
               'max-h-[200px] min-h-[44px]'
             )}
           />
-          {isLoading && isStreamingEnabled ? (
-            <Button
-              onClick={onStopStreaming}
-              size="icon"
-              variant="destructive"
-              className="h-8 w-8 shrink-0 rounded-full"
-            >
-              <StopCircle className="h-4 w-4" />
-              <span className="sr-only">Stop generating</span>
-            </Button>
-          ) : (
-            <Button
-              onClick={handleSend}
-              disabled={!input.trim() || isLoading}
-              size="icon"
-              className={cn(
-                'h-8 w-8 shrink-0 rounded-full transition-all duration-150',
-                'bg-primary text-primary-foreground hover:bg-[#a9583e]',
-                'disabled:bg-primary/20 disabled:text-primary-foreground/40 disabled:cursor-not-allowed'
-              )}
-            >
-              <ArrowUp className="h-5 w-5 stroke-[3]" />
-              <span className="sr-only">Send message</span>
-            </Button>
-          )}
+          {/* One persistent swap button: the send arrow morphs into the stop
+              icon (blur swap + spring press) as soon as streaming starts. */}
+          <ActionSwapButton
+            items={[
+              { id: 'send', label: '', icon: <ArrowUp className="h-5 w-5 stroke-[3]" />, ariaLabel: 'Send message' },
+              { id: 'stop', label: '', icon: <StopCircle className="h-4 w-4" />, ariaLabel: 'Stop generating' },
+            ]}
+            value={isStop ? 'stop' : 'send'}
+            onClick={() => (isStop ? onStopStreaming() : handleSend())}
+            variant="primary"
+            size="icon"
+            animation="blur"
+            disabled={isStop ? false : !input.trim() || isLoading}
+            className="h-8 w-8 shrink-0 rounded-full bg-primary text-primary-foreground hover:bg-[#a9583e] disabled:bg-primary/20 disabled:text-primary-foreground/40 disabled:opacity-100"
+          />
         </div>
 
         {/* Keyboard hint + message quota */}
@@ -255,8 +250,25 @@ export function ChatInput({
                   className="h-1 w-14"
                   aria-label="Messages remaining this hour"
                 />
-                <span className={cn('whitespace-nowrap', quota.remaining === 0 && 'text-destructive')}>
-                  {quota.remaining}/{quota.limit} left
+                {/* Digits roll on change; first render shows the exact value */}
+                <span
+                  className={cn(
+                    'relative inline-grid overflow-hidden',
+                    quota.remaining === 0 && 'text-destructive'
+                  )}
+                >
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    <motion.span
+                      key={quota.remaining}
+                      initial={reduce ? false : { opacity: 0, y: '60%' }}
+                      animate={{ opacity: 1, y: '0%' }}
+                      exit={reduce ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, y: '-60%', transition: { duration: 0.12, ease: 'easeOut' } }}
+                      transition={reduce ? { duration: 0 } : SPRING_SWAP}
+                      className="col-start-1 row-start-1 whitespace-nowrap"
+                    >
+                      {quota.remaining}/{quota.limit} left
+                    </motion.span>
+                  </AnimatePresence>
                 </span>
               </div>
             )}
