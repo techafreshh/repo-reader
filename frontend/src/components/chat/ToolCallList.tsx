@@ -14,7 +14,7 @@ interface ToolCallListProps {
 }
 
 /** Extract the interesting argument as the row's target, tolerating
- * partially-streamed JSON (falls back to the raw accumulated text). */
+ * partially-streamed JSON (empty until the args parse). */
 function toolTarget(toolCall: ToolCall): string {
   const raw = toolCall.args;
   if (!raw) return '';
@@ -22,14 +22,14 @@ function toolTarget(toolCall: ToolCall): string {
     const parsed = JSON.parse(raw);
     const value =
       parsed.subdir ?? parsed.filepath ?? parsed.repo_target ?? parsed.pattern ?? parsed.symbol_name;
-    if (typeof value === 'string' && value.length > 0) {
-      return value === '.' ? 'repository root' : value;
-    }
+    return typeof value === 'string' && value.length > 0
+      ? value === '.'
+        ? 'repository root'
+        : value
+      : '';
   } catch {
-    /* partial JSON — show the raw text instead */
+    return '';
   }
-  const trimmed = raw.trim();
-  return trimmed.length > 48 ? `${trimmed.slice(0, 45)}…` : trimmed;
 }
 
 function getToolLabel(name: string): string {
