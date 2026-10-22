@@ -1,11 +1,13 @@
 /// <reference types="vite/client" />
 
 // The vendored beUI components (src/components/motion, src/components/agents)
-// use the `inert` attribute, which React 18.3 supports at runtime but the
-// React 18 typings (written before the attribute shipped) do not declare.
+// use the `inert` attribute, which the React 18 typings (written before the
+// attribute shipped) do not declare. React 18 only writes the attribute for
+// string values — call sites use `inert={cond ? "" : undefined}` because
+// boolean `true`/`false` are dropped from the DOM with a console warning.
 declare module "react" {
   interface HTMLAttributes<T> {
-    inert?: boolean | undefined;
+    inert?: boolean | "" | undefined;
   }
 }
 

@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ToolCall } from '@/types/chat';
-import { ToolCallCard, TOOL_LABELS } from './ToolCallCard';
 import {
   AgentActivity,
   type AgentActivityItem,
 } from '@/components/agents/agent-activity';
-import { ThinkingShimmer } from '@/components/agents/loading-states/thinking-shimmer';
 
 interface ToolCallListProps {
   toolCalls: ToolCall[];
@@ -32,8 +30,42 @@ function toolTarget(toolCall: ToolCall): string {
   }
 }
 
-function getToolLabel(name: string): string {
-  return TOOL_LABELS[name] ?? name.replace(/_/g, ' ');
+/** Turn each tool call into one beUI activity row, mirroring the
+ * agent-activity "Tool calls" style: read/search events with monospace
+ * targets, and never the raw input/output payloads. */
+function toActivityItem(toolCall: ToolCall): AgentActivityItem {
+  const target = toolTarget(toolCall);
+
+  switch (toolCall.name) {
+    case 'initialize_repo':
+      return {
+        id: toolCall.id,
+        type: 'step',
+        label: 'Initializing repository',
+        status: toolCall.status === 'running' ? 'active' : 'complete',
+      };
+    case 'search_code':
+      return { id: toolCall.id, type: 'search', query: target || '…' };
+    case 'find_references':
+      return {
+        id: toolCall.id,
+        type: 'search',
+        query: target ? `references of ${target}` : '…',
+      };
+    default:
+      return {
+        id: toolCall.id,
+        type: 'tool',
+        action: 'read',
+        target:
+          target ||
+          (toolCall.name === 'list_files'
+            ? 'repository root'
+            : toolCall.name === 'get_file_structure'
+              ? 'repository tree'
+              : '…'),
+      };
+  }
 }
 
 function formatDuration(seconds: number): string {
@@ -45,7 +77,6 @@ export function ToolCallList({ toolCalls, isRunActive = false }: ToolCallListPro
   const hasRunning = toolCalls.some((tc) => tc.status === 'running');
   const working = isRunActive || hasRunning;
   const [open, setOpen] = useState(false);
-  const [cardOpens, setCardOpens] = useState<Record<string, boolean>>({});
 
   // Run duration: starts with the first streamed tool (or run start) and
   // freezes when the run completes.
@@ -62,28 +93,7 @@ export function ToolCallList({ toolCalls, isRunActive = false }: ToolCallListPro
     return () => clearInterval(timer);
   }, [working]);
 
-  const items: AgentActivityItem[] = useMemo(
-    () =>
-      toolCalls.map((tc) => {
-        const target = toolTarget(tc);
-        return {
-          id: tc.id,
-          type: 'step' as const,
-          status: tc.status === 'running' ? ('active' as const) : ('complete' as const),
-          label: (
-            <span className="block truncate">
-              {getToolLabel(tc.name)}
-              {target && (
-                <span className="ml-1.5 inline-block max-w-[24rem] truncate align-baseline font-mono text-xs text-muted-foreground">
-                  {target}
-                </span>
-              )}
-            </span>
-          ),
-        };
-      }),
-    [toolCalls],
-  );
+  const items = useMemo(() => toolCalls.map(toActivityItem), [toolCalls]);
 
   const toolCount = toolCalls.length;
   const summary = (
@@ -110,24 +120,6 @@ export function ToolCallList({ toolCalls, isRunActive = false }: ToolCallListPro
         onOpenChange={setOpen}
         maxHeight={176}
       />
-
-      {/* Deep inspection: Parameters/Response JSON cards, lazily mounted when
-          the completed activity is expanded (working shows the stream only). */}
-      {!working && open && (
-        <div className="mt-2 space-y-2">
-          {toolCalls.map((tc, index) => (
-            <ToolCallCard
-              key={tc.id}
-              toolCall={tc}
-              index={index}
-              isOpen={cardOpens[tc.id] ?? false}
-              onToggle={(id) =>
-                setCardOpens((prev) => ({ ...prev, [id]: !(prev[id] ?? false) }))
-              }
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

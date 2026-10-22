@@ -435,7 +435,7 @@ export function SelectContent({ className, children }: SelectContentProps) {
       role="listbox"
       aria-labelledby={ctx.triggerId}
       aria-hidden={!open}
-      inert={!open}
+      inert={open ? undefined : ""}
       onKeyDown={(event) => {
         // Tab leaves the list from the trigger, so focus moves on to the
         // control after the select rather than into the closing panel.

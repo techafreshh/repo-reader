@@ -25,6 +25,7 @@ frontend/node_modules
 frontend/dist
 frontend/dist-ssr
 frontend/*.local
+frontend/*.tsbuildinfo
 
 # Editor directories and files
 frontend/.vscode/*

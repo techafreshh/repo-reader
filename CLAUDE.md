@@ -96,3 +96,9 @@ There is no backend pytest suite; verify imports with
   updating them from the registry. Both lockfiles must stay in sync — the
   Docker build runs `npm ci`, so new deps need `package-lock.json` updated
   even when the shadcn CLI only touches `bun.lockb`.
+- This app's shadcn tokens are raw HSL triplets, so vendored beUI code that
+  eats `var(--token)` as a full color silently breaks: gradients need
+  `hsl(var(--…))` wrapping (`lib/text-shimmer.ts`), and `--muted` here is a
+  mid-dark warm gray where beUI assumes a near-white neutral — solid
+  `bg-muted` fills were swapped for `bg-foreground/5` (`agent-activity/
+  activity-row.tsx` pills) to keep text readable in both themes.

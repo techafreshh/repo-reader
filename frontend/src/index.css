@@ -140,38 +140,12 @@
   .message-enter {
     animation: message-snap-up 180ms cubic-bezier(0.22, 1, 0.36, 1);
   }
-
-  /* Staggered entrance for tool call cards */
-  .tool-card-enter {
-    animation: tool-card-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    animation-delay: calc(var(--stagger-index, 0) * 55ms);
-  }
-
-  /* Soft glow while a tool is executing */
-  .tool-card-running {
-    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.25),
-      0 4px 22px -6px hsl(var(--primary) / 0.45);
-    animation: tool-card-glow-pulse 2.4s ease-in-out infinite;
-  }
-
-  /* Pulsing left spine for the active tool */
-  .tool-spine {
-    animation: tool-spine-pulse 1.6s ease-in-out infinite;
-  }
-
-  /* Sweeping shimmer across the running card */
-  .tool-shimmer-sweep {
-    animation: tool-shimmer-sweep 1.8s ease-in-out infinite;
-  }
 }
 
 @layer utilities {
   /* Reduced motion support */
   @media (prefers-reduced-motion: reduce) {
-    .message-enter,
-    .tool-card-enter,
-    .tool-spine,
-    .tool-shimmer-sweep {
+    .message-enter {
       animation: none;
     }
   }
@@ -185,46 +159,6 @@
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes tool-card-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes tool-card-glow-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.25),
-      0 4px 18px -6px hsl(var(--primary) / 0.35);
-  }
-  50% {
-    box-shadow: 0 0 0 1.5px hsl(var(--primary) / 0.45),
-      0 6px 26px -4px hsl(var(--primary) / 0.55);
-  }
-}
-
-@keyframes tool-spine-pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-@keyframes tool-shimmer-sweep {
-  0% {
-    transform: translateX(0);
-  }
-  100% {
-    transform: translateX(400%);
   }
 }
 

@@ -378,7 +378,7 @@ function MorphPopoverSurface({
   return (
     <motion.div
       data-morph-popover-portal=""
-      inert={!isPresent}
+      inert={isPresent ? undefined : ""}
       style={{
         left,
         top,

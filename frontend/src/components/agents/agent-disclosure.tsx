@@ -26,7 +26,7 @@ export function AgentDisclosure({
     <motion.div
       {...props}
       aria-hidden={!open}
-      inert={!open}
+      inert={open ? undefined : ""}
       initial={false}
       animate={
         reduce

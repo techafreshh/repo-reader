@@ -186,7 +186,10 @@ function ToolRow({ item }: { item: AgentActivityTool }) {
         <ActionIcon action={item.action} />
       </span>
       <span className="shrink-0 font-medium text-foreground/90">{action}</span>
-      <span className="min-w-0 flex-1 truncate rounded-lg bg-muted/80 px-2.5 py-1 font-mono text-xs text-muted-foreground/70">
+      {/* This app defines --muted as a mid-dark warm gray (beUI assumes a light
+          neutral), so bg-muted/80 washes out the mono target — use a faint
+          foreground wash instead and keep the text at full muted strength. */}
+      <span className="min-w-0 flex-1 truncate rounded-lg bg-foreground/5 px-2.5 py-1 font-mono text-xs text-muted-foreground">
         {item.target}
       </span>
       {typeof item.additions === "number" || typeof item.deletions === "number" ? (
@@ -223,7 +226,7 @@ function TraceRow({ item }: { item: AgentActivityTrace }) {
       </span>
       <span className="font-medium text-foreground/90">{item.label}</span>
       {item.detail ? (
-        <span className="min-w-0 truncate rounded-lg bg-muted/80 px-2.5 py-1 font-mono text-xs text-muted-foreground/70">
+        <span className="min-w-0 truncate rounded-lg bg-foreground/5 px-2.5 py-1 font-mono text-xs text-muted-foreground">
           {item.detail}
         </span>
       ) : (

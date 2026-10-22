@@ -259,7 +259,7 @@ export function CollapsibleContent({
       role="region"
       aria-labelledby={context.triggerId}
       aria-hidden={!context.open}
-      inert={!context.open}
+      inert={context.open ? undefined : ""}
       data-slot="collapsible-content"
       data-state={context.open ? "open" : "closed"}
       initial={false}

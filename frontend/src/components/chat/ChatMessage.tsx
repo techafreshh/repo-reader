@@ -139,8 +139,8 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
           isError && 'border-destructive/50 bg-destructive/10 px-4 py-3'
         )}
       >
-        {/* Agent activity — one adaptive stream for the whole run while it
-            streams; collapses to a summary with JSON inspection on demand */}
+        {/* Agent activity — one chronological stream for the whole run while
+            it streams; collapses to a run summary when it completes */}
         {!isUser && hasTools && (
           <ToolCallList toolCalls={message.toolCalls} isRunActive={isStreaming} />
         )}
