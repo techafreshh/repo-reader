@@ -44,6 +44,8 @@ const TOOL_LABELS: Record<string, string> = {
   analyze_python_ast: 'Analyzing Python AST',
 };
 
+export { TOOL_LABELS };
+
 function getToolIcon(name: string): LucideIcon {
   return TOOL_ICONS[name] ?? Wrench;
 }

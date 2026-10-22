@@ -13,6 +13,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useState } from 'react';
 import { LoadingDots } from './LoadingDots';
+import { ThinkingShimmer } from '@/components/agents/loading-states/thinking-shimmer';
 import { ToolCallList } from './ToolCallList';
 
 interface CodeBlockProps {
@@ -101,6 +102,7 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isStreaming = message.status === 'streaming';
   const isError = message.status === 'error';
+  const hasTools = (message.toolCalls?.length ?? 0) > 0;
 
   const handleCopy = () => {
     if (message.content) {
@@ -137,9 +139,10 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
           isError && 'border-destructive/50 bg-destructive/10 px-4 py-3'
         )}
       >
-        {/* Tool Calls — full width of the assistant message rectangle */}
-        {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
-          <ToolCallList toolCalls={message.toolCalls} />
+        {/* Agent activity — one adaptive stream for the whole run while it
+            streams; collapses to a summary with JSON inspection on demand */}
+        {!isUser && hasTools && (
+          <ToolCallList toolCalls={message.toolCalls} isRunActive={isStreaming} />
         )}
 
         {/* Message content */}
@@ -179,12 +182,18 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
                 {message.content}
               </ReactMarkdown>
             )}
-            {isStreaming && (
-              <div className={cn("inline-block align-middle", message.content && "mt-2")}>
+            {isStreaming && message.content && (
+              <div className="inline-block align-middle mt-2">
                 <LoadingDots />
               </div>
             )}
           </div>
+        )}
+
+        {/* Thinking shimmer before the first streamed token — suppressed when
+            the activity stream's working header already shows progress */}
+        {isStreaming && !message.content && !hasTools && (
+          <ThinkingShimmer className="text-sm" />
         )}
 
         {/* Error state with retry */}

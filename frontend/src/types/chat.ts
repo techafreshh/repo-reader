@@ -1,6 +1,6 @@
 export type MessageRole = 'user' | 'assistant';
 
-export type MessageStatus = 'sending' | 'streaming' | 'complete' | 'error';
+export type MessageStatus = 'streaming' | 'complete' | 'error';
 
 export type ToolCallStatus = 'running' | 'done' | 'error';
 

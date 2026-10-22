@@ -18,49 +18,65 @@ const doneTool: ToolCall = {
   result: "src/main.py\nsrc/app.py",
 };
 
+const doneTool2: ToolCall = {
+  id: "t3",
+  name: "read_file",
+  status: "done",
+  args: '{"filepath":"rate_limiter.py"}',
+  result: "--- File: rate_limiter.py ---\nimport time",
+};
+
+function renderList(toolCalls: ToolCall[], isRunActive = false) {
+  return render(<ToolCallList toolCalls={toolCalls} isRunActive={isRunActive} />);
+}
+
 describe("ToolCallList", () => {
-  it("renders a running tool card with running status", () => {
-    render(<ToolCallList toolCalls={[runningTool]} />);
+  it("streams tool calls as activity steps while the run is active", () => {
+    renderList([runningTool], true);
     expect(screen.getByText(/Initializing repository/i)).toBeInTheDocument();
-    expect(screen.getByText(/Running/i)).toBeInTheDocument();
+    expect(screen.getByText(/Exploring the repository/i)).toBeInTheDocument();
+    // No deep-inspection surface while the run is working.
+    expect(screen.queryByText("Parameters")).not.toBeInTheDocument();
   });
 
-  it("renders a completed tool card with done status", () => {
-    render(<ToolCallList toolCalls={[doneTool]} />);
-    expect(screen.getByText(/Listing files/i)).toBeInTheDocument();
-    expect(screen.getByText(/Done/i)).toBeInTheDocument();
+  it("collapses a finished run to a summary row", () => {
+    renderList([doneTool, doneTool2]);
+    const summary = screen.getByRole("button", { name: /Ran 2 tools/i });
+    expect(summary).toBeInTheDocument();
+    expect(summary).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Parameters")).not.toBeInTheDocument();
   });
 
-  it("auto-expands running tools to reveal args and waiting state", () => {
-    render(<ToolCallList toolCalls={[runningTool]} />);
-    expect(screen.getByRole("button", { name: /Initializing repository/i })).toHaveAttribute(
-      "aria-expanded",
-      "true"
-    );
-    expect(screen.getByText("Parameters")).toBeInTheDocument();
-    expect(screen.getByText(/Waiting for result/i)).toBeInTheDocument();
-  });
+  it("reveals the JSON inspection cards when the summary is expanded", () => {
+    renderList([doneTool, doneTool2]);
+    fireEvent.click(screen.getByRole("button", { name: /Ran 2 tools/i }));
 
-  it("collapses finished tools until toggled open", () => {
-    render(<ToolCallList toolCalls={[doneTool]} />);
+    // One Parameters section per tool card
+    expect(screen.getAllByText("Parameters")).toHaveLength(2);
     const toggle = screen.getByRole("button", { name: /Listing files/i });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
-
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("keeps the running tool visible and hides earlier calls past the threshold", () => {
+  it("shows the tool's target argument in the activity row", () => {
+    renderList([doneTool2], true);
+    expect(screen.getByText(/rate_limiter\.py/)).toBeInTheDocument();
+  });
+
+  it("keeps the run summary for every call — no early-call truncation needed", () => {
     const calls: ToolCall[] = [
-      { id: "a", name: "list_files", status: "done" },
+      { id: "a", name: "list_files", status: "done", args: '{"subdir":"."}' },
       { id: "b", name: "read_file", status: "done" },
       { id: "c", name: "search_code", status: "done" },
       { id: "d", name: "find_references", status: "done" },
-      { ...runningTool, id: "e" },
+      { id: "e", name: "read_file", status: "done" },
     ];
-    render(<ToolCallList toolCalls={calls} />);
-
-    expect(screen.getByText(/Show .* earlier tool call/i)).toBeInTheDocument();
-    expect(screen.getByText(/Initializing repository/i)).toBeInTheDocument();
+    renderList(calls);
+    expect(
+      screen.getByRole("button", { name: /Ran 5 tools/i })
+    ).toBeInTheDocument();
+    // The collapsed summary replaces the old "Show N earlier tool calls".
+    expect(screen.queryByText(/Show .* earlier tool call/i)).not.toBeInTheDocument();
   });
 });
